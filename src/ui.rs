@@ -384,9 +384,10 @@ impl App {
         let matcher = SkimMatcherV2::default();
         let entries: Vec<_> = self.browser.entries().to_vec();
         
-        for (_i, entry) in entries.iter().enumerate() {
+        for (i, entry) in entries.iter().enumerate() {
             if let Some(_score) = matcher.fuzzy_match(&entry.name(), &self.search_query) {
-                // Found a match
+                // Found a match, navigate to it
+                self.browser.select_index(i);
                 self.status_message = format!("Found: {}", entry.name());
                 return;
             }

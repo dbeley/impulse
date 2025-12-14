@@ -135,6 +135,12 @@ impl Browser {
         }
     }
 
+    pub fn select_index(&mut self, index: usize) {
+        if index < self.entries.len() {
+            self.selected = index;
+        }
+    }
+
     pub fn get_all_audio_files(&self) -> Vec<PathBuf> {
         let mut files = Vec::new();
         for entry in WalkDir::new(&self.current_dir)

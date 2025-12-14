@@ -5,7 +5,6 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, Clone)]
 pub struct Playlist {
     pub name: String,
-    #[allow(dead_code)]
     pub path: PathBuf,
     pub tracks: Vec<PathBuf>,
 }

@@ -100,10 +100,4 @@ impl Player {
             sink.set_volume(volume);
         }
     }
-
-    #[allow(dead_code)]
-    pub fn seek(&self, _position: Duration) {
-        // Seeking is not directly supported by rodio's Sink
-        // Would need to implement a custom source for this
-    }
 }
