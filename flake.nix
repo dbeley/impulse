@@ -26,11 +26,13 @@
         nativeBuildInputs = with pkgs; [
           rustToolchain
           pkg-config
+          cmake
         ];
 
         # Runtime dependencies
         buildInputs = with pkgs; [
           alsa-lib
+          libopus
         ];
 
         # Development tools

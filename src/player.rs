@@ -4,7 +4,6 @@ use std::fs::File;
 use std::io::BufReader;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
 #[derive(Clone)]
 pub struct Player {
@@ -30,17 +29,25 @@ impl Player {
     pub fn play(&self, path: PathBuf) -> Result<()> {
         let file = File::open(&path)
             .context(format!("Failed to open audio file: {:?}", path))?;
+
+        let file_metadata = file.metadata()
+            .context(format!("Failed to read file metadata: {:?}", path))?;
+
+        if file_metadata.len() == 0 {
+            anyhow::bail!("Audio file is empty: {:?}", path);
+        }
+
         let source = Decoder::new(BufReader::new(file))
-            .context("Failed to decode audio file")?;
+            .context(format!("Failed to decode audio file: {:?}. The file may be corrupted, incomplete, or in an unsupported format.", path))?;
 
         let sink = Sink::try_new(&self.stream_handle)
             .context("Failed to create audio sink")?;
-        
+
         sink.append(source);
-        
+
         *self.sink.lock().unwrap() = Some(sink);
         *self.current_track.lock().unwrap() = Some(path);
-        
+
         Ok(())
     }
 

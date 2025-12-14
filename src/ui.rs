@@ -46,10 +46,10 @@ impl Tab {
 
     fn name(&self) -> &str {
         match self {
-            Tab::Browser => "Browser",
-            Tab::Queue => "Queue",
-            Tab::Player => "Player",
-            Tab::Playlists => "Playlists",
+            Tab::Browser => "1. Browser",
+            Tab::Queue => "2. Queue",
+            Tab::Player => "3. Player",
+            Tab::Playlists => "4. Playlists",
         }
     }
 }
@@ -142,8 +142,20 @@ impl App {
             }
             KeyCode::Char('?') => {
                 self.status_message = String::from(
-                    "Keys: j/k=nav, l/Enter=select, h=back, Space=play/pause, n=next, p=prev, a=add, A=add-all, Tab=switch-tab, /=search, q=quit"
+                    "Keys: j/k=nav, l/Enter=select, h=back, Space=play/pause, n=next, p=prev, a=add, A=add-all, Tab/1-4=switch-tab, /=search, q=quit"
                 );
+            }
+            KeyCode::Char('1') => {
+                self.current_tab = Tab::Browser;
+            }
+            KeyCode::Char('2') => {
+                self.current_tab = Tab::Queue;
+            }
+            KeyCode::Char('3') => {
+                self.current_tab = Tab::Player;
+            }
+            KeyCode::Char('4') => {
+                self.current_tab = Tab::Playlists;
             }
             KeyCode::Tab => {
                 self.current_tab = self.current_tab.next();
@@ -167,8 +179,11 @@ impl App {
                     self.player.resume();
                     self.status_message = String::from("Resumed");
                 } else if let Some(track) = self.queue.current() {
-                    self.player.play(track.clone())?;
-                    self.status_message = format!("Playing: {}", track.display());
+                    if let Err(e) = self.player.play(track.clone()) {
+                        self.status_message = format!("Error playing: {}", e);
+                    } else {
+                        self.status_message = format!("Playing: {}", track.display());
+                    }
                 }
             }
             KeyCode::Char('n') => {
@@ -216,9 +231,11 @@ impl App {
                 if let Some(track) = self.browser.enter_selected() {
                     self.queue.add(track.clone());
                     self.status_message = format!("Added to queue: {}", track.display());
-                    
+
                     if self.queue.len() == 1 && !self.player.is_playing() {
-                        self.player.play(track)?;
+                        if let Err(e) = self.player.play(track) {
+                            self.status_message = format!("Error playing: {}", e);
+                        }
                     }
                 }
             }
@@ -266,8 +283,11 @@ impl App {
             }
             KeyCode::Enter => {
                 if let Some(track) = self.queue.jump_to(self.queue_selected) {
-                    self.player.play(track.clone())?;
-                    self.status_message = format!("Playing: {}", track.display());
+                    if let Err(e) = self.player.play(track.clone()) {
+                        self.status_message = format!("Error playing: {}", e);
+                    } else {
+                        self.status_message = format!("Playing: {}", track.display());
+                    }
                 }
             }
             KeyCode::Char('d') => {

@@ -12,7 +12,7 @@ Minimalist music player with minimal dependencies, focusing on speed and a keybo
 - 🎨 **Minimal TUI** - Clean interface with multiple tabs (Browser, Queue, Player, Playlists)
 - ⚙️  **Configuration file** - Customize settings via TOML config
 - 🚀 **Minimal dependencies** - Fast and lightweight
-- 🎶 **Multiple format support** - MP3, FLAC, OGG, WAV, M4A, AAC, Opus, WMA
+- 🎶 **Multiple format support** - MP3, FLAC, OGG Vorbis, WAV, M4A, AAC, ALAC
 
 ## Installation
 
@@ -124,7 +124,17 @@ Type `:` to enter command mode. Available commands:
 
 ## Supported Formats
 
-MP3, FLAC, OGG, WAV, M4A, AAC, Opus, WMA
+Impulse supports all major audio formats through the Symphonia audio decoding library:
+
+- **MP3** - MPEG-1/2 Layer 3
+- **FLAC** - Free Lossless Audio Codec
+- **OGG Vorbis** - Ogg container with Vorbis codec
+- **WAV** - Waveform Audio File Format (PCM, ADPCM)
+- **M4A** - MPEG-4 Audio (AAC in MP4 container)
+- **AAC** - Advanced Audio Coding
+- **ALAC** - Apple Lossless Audio Codec
+
+**Note:** Opus format is not currently supported due to build complexity. If Opus support is critical for your use case, please open an issue.
 
 ## Requirements
 

@@ -5,26 +5,30 @@ use walkdir::WalkDir;
 #[derive(Debug, Clone, PartialEq)]
 pub enum FileEntry {
     Directory(PathBuf),
+    ParentDirectory(PathBuf),
     AudioFile(PathBuf),
 }
 
 impl FileEntry {
     pub fn path(&self) -> &Path {
         match self {
-            FileEntry::Directory(p) | FileEntry::AudioFile(p) => p,
+            FileEntry::Directory(p) | FileEntry::ParentDirectory(p) | FileEntry::AudioFile(p) => p,
         }
     }
 
     pub fn name(&self) -> String {
-        self.path()
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("")
-            .to_string()
+        match self {
+            FileEntry::ParentDirectory(_) => "..".to_string(),
+            _ => self.path()
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("")
+                .to_string(),
+        }
     }
 
     pub fn is_dir(&self) -> bool {
-        matches!(self, FileEntry::Directory(_))
+        matches!(self, FileEntry::Directory(_) | FileEntry::ParentDirectory(_))
     }
 }
 
@@ -47,13 +51,8 @@ impl Browser {
 
     pub fn load_entries(&mut self) {
         self.entries.clear();
-        
-        // Add parent directory entry if not at root
-        if self.current_dir.parent().is_some() {
-            self.entries.push(FileEntry::Directory(
-                self.current_dir.parent().unwrap().to_path_buf(),
-            ));
-        }
+
+        let has_parent = self.current_dir.parent().is_some();
 
         // Read directory entries
         if let Ok(entries) = fs::read_dir(&self.current_dir) {
@@ -78,8 +77,16 @@ impl Browser {
                 (FileEntry::AudioFile(p1), FileEntry::AudioFile(p2)) => {
                     p1.file_name().cmp(&p2.file_name())
                 }
+                _ => std::cmp::Ordering::Equal,
             }
         });
+
+        // Add parent directory entry at the beginning if not at root
+        if has_parent {
+            self.entries.insert(0, FileEntry::ParentDirectory(
+                self.current_dir.parent().unwrap().to_path_buf(),
+            ));
+        }
 
         self.selected = 0;
     }
@@ -87,7 +94,7 @@ impl Browser {
     pub fn enter_selected(&mut self) -> Option<PathBuf> {
         if let Some(entry) = self.entries.get(self.selected) {
             match entry {
-                FileEntry::Directory(path) => {
+                FileEntry::Directory(path) | FileEntry::ParentDirectory(path) => {
                     self.current_dir = path.clone();
                     self.load_entries();
                     None
@@ -163,7 +170,7 @@ fn is_audio_file(path: &Path) -> bool {
         if let Some(ext_str) = ext.to_str() {
             matches!(
                 ext_str.to_lowercase().as_str(),
-                "mp3" | "flac" | "ogg" | "wav" | "m4a" | "aac" | "opus" | "wma"
+                "mp3" | "flac" | "ogg" | "wav" | "m4a" | "aac" | "alac"
             )
         } else {
             false

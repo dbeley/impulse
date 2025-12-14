@@ -6,6 +6,7 @@ target/
 # Nix
 result
 result-*
+.direnv/
 
 # IDE
 .idea/
