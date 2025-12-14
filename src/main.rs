@@ -1,5 +1,6 @@
 mod browser;
 mod config;
+mod metadata;
 mod player;
 mod playlist;
 mod queue;
@@ -45,7 +46,7 @@ fn main() -> Result<()> {
             std::process::exit(1);
         }
     };
-    
+
     let res = app.run(&mut terminal);
 
     // Restore terminal

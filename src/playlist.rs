@@ -5,11 +5,13 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, Clone)]
 pub struct Playlist {
     pub name: String,
+    #[allow(dead_code)]
     pub path: PathBuf,
     pub tracks: Vec<PathBuf>,
 }
 
 impl Playlist {
+    #[allow(dead_code)]
     pub fn new(name: String, path: PathBuf) -> Self {
         Self {
             name,
@@ -18,10 +20,11 @@ impl Playlist {
         }
     }
 
+    #[allow(dead_code)]
     pub fn load(path: &Path) -> Result<Self> {
-        let content = fs::read_to_string(path)
-            .context(format!("Failed to read playlist: {:?}", path))?;
-        
+        let content =
+            fs::read_to_string(path).context(format!("Failed to read playlist: {:?}", path))?;
+
         let name = path
             .file_stem()
             .and_then(|n| n.to_str())
@@ -43,10 +46,11 @@ impl Playlist {
         })
     }
 
+    #[allow(dead_code)]
     pub fn save(&self) -> Result<()> {
         let mut content = String::new();
         content.push_str("#EXTM3U\n");
-        
+
         for track in &self.tracks {
             if let Some(track_str) = track.to_str() {
                 content.push_str(track_str);
@@ -56,14 +60,16 @@ impl Playlist {
 
         fs::write(&self.path, content)
             .context(format!("Failed to save playlist: {:?}", self.path))?;
-        
+
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn add_track(&mut self, track: PathBuf) {
         self.tracks.push(track);
     }
 
+    #[allow(dead_code)]
     pub fn remove_track(&mut self, index: usize) {
         if index < self.tracks.len() {
             self.tracks.remove(index);
@@ -111,17 +117,19 @@ impl PlaylistManager {
         self.playlists.sort_by(|a, b| a.name.cmp(&b.name));
     }
 
+    #[allow(dead_code)]
     pub fn create_playlist(&mut self, name: String) -> Result<()> {
-        let filename = format!("{}.m3u", name.replace('/', "_").replace('\\', "_"));
+        let filename = format!("{}.m3u", name.replace(['/', '\\'], "_"));
         let path = self.playlist_dir.join(filename);
-        
+
         let playlist = Playlist::new(name, path);
         playlist.save()?;
         self.playlists.push(playlist);
-        
+
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn delete_playlist(&mut self, index: usize) -> Result<()> {
         if index < self.playlists.len() {
             let playlist = &self.playlists[index];
@@ -136,6 +144,7 @@ impl PlaylistManager {
         &self.playlists
     }
 
+    #[allow(dead_code)]
     pub fn playlists_mut(&mut self) -> &mut [Playlist] {
         &mut self.playlists
     }
@@ -144,6 +153,7 @@ impl PlaylistManager {
         self.playlists.get(index)
     }
 
+    #[allow(dead_code)]
     pub fn get_playlist_mut(&mut self, index: usize) -> Option<&mut Playlist> {
         self.playlists.get_mut(index)
     }

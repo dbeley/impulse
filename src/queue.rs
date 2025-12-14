@@ -33,7 +33,7 @@ impl Queue {
     pub fn remove(&mut self, index: usize) {
         if index < self.tracks.len() {
             self.tracks.remove(index);
-            
+
             // Update current_index if needed
             if let Some(current) = self.current_index {
                 if current == index {
@@ -57,8 +57,7 @@ impl Queue {
     }
 
     pub fn current(&self) -> Option<&PathBuf> {
-        self.current_index
-            .and_then(|idx| self.tracks.get(idx))
+        self.current_index.and_then(|idx| self.tracks.get(idx))
     }
 
     pub fn next(&mut self) -> Option<&PathBuf> {

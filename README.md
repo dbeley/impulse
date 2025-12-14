@@ -12,7 +12,7 @@ Minimalist music player with minimal dependencies, focusing on speed and a keybo
 - 🎨 **Minimal TUI** - Clean interface with multiple tabs (Browser, Queue, Player, Playlists)
 - ⚙️  **Configuration file** - Customize settings via TOML config
 - 🚀 **Minimal dependencies** - Fast and lightweight
-- 🎶 **Multiple format support** - MP3, FLAC, OGG Vorbis, WAV, M4A, AAC, ALAC
+- 🎶 **Multiple format support** - MP3, FLAC, OGG Vorbis, Opus, WAV, M4A, AAC, ALAC
 
 ## Installation
 
@@ -47,7 +47,7 @@ Add to your NixOS configuration:
 ```nix
 {
   inputs.impulse.url = "github:dbeley/impulse";
-  
+
   # In your configuration.nix or home.nix:
   programs.impulse.enable = true;
 }
@@ -79,8 +79,8 @@ On first run, a default configuration file will be created at `~/.config/impulse
 - `k` / `↑` - Move up
 - `g` - Go to first item
 - `G` - Go to last item
-- `l` / `Enter` - Enter directory or add file to queue
-- `h` - Go to parent directory
+- `l` / `→` / `Enter` - Enter directory or add file to queue
+- `h` / `←` - Go to parent directory
 - `a` - Add current file to queue
 - `A` - Add all files in current directory to queue
 
@@ -129,12 +129,13 @@ Impulse supports all major audio formats through the Symphonia audio decoding li
 - **MP3** - MPEG-1/2 Layer 3
 - **FLAC** - Free Lossless Audio Codec
 - **OGG Vorbis** - Ogg container with Vorbis codec
+- **Opus** - Opus codec (via symphonia-adapter-libopus)
 - **WAV** - Waveform Audio File Format (PCM, ADPCM)
 - **M4A** - MPEG-4 Audio (AAC in MP4 container)
 - **AAC** - Advanced Audio Coding
 - **ALAC** - Apple Lossless Audio Codec
 
-**Note:** Opus format is not currently supported due to build complexity. If Opus support is critical for your use case, please open an issue.
+**Note:** Opus support requires cmake and libopus system libraries. When using the Nix development environment, these dependencies are automatically provided. For non-Nix installations, you'll need to install cmake and libopus-dev on your system.
 
 ## Requirements
 

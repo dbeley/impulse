@@ -19,7 +19,8 @@ impl FileEntry {
     pub fn name(&self) -> String {
         match self {
             FileEntry::ParentDirectory(_) => "..".to_string(),
-            _ => self.path()
+            _ => self
+                .path()
                 .file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("")
@@ -28,7 +29,10 @@ impl FileEntry {
     }
 
     pub fn is_dir(&self) -> bool {
-        matches!(self, FileEntry::Directory(_) | FileEntry::ParentDirectory(_))
+        matches!(
+            self,
+            FileEntry::Directory(_) | FileEntry::ParentDirectory(_)
+        )
     }
 }
 
@@ -67,25 +71,24 @@ impl Browser {
         }
 
         // Sort: directories first, then files, all alphabetically
-        self.entries.sort_by(|a, b| {
-            match (a, b) {
-                (FileEntry::Directory(p1), FileEntry::Directory(p2)) => {
-                    p1.file_name().cmp(&p2.file_name())
-                }
-                (FileEntry::Directory(_), FileEntry::AudioFile(_)) => std::cmp::Ordering::Less,
-                (FileEntry::AudioFile(_), FileEntry::Directory(_)) => std::cmp::Ordering::Greater,
-                (FileEntry::AudioFile(p1), FileEntry::AudioFile(p2)) => {
-                    p1.file_name().cmp(&p2.file_name())
-                }
-                _ => std::cmp::Ordering::Equal,
+        self.entries.sort_by(|a, b| match (a, b) {
+            (FileEntry::Directory(p1), FileEntry::Directory(p2)) => {
+                p1.file_name().cmp(&p2.file_name())
             }
+            (FileEntry::Directory(_), FileEntry::AudioFile(_)) => std::cmp::Ordering::Less,
+            (FileEntry::AudioFile(_), FileEntry::Directory(_)) => std::cmp::Ordering::Greater,
+            (FileEntry::AudioFile(p1), FileEntry::AudioFile(p2)) => {
+                p1.file_name().cmp(&p2.file_name())
+            }
+            _ => std::cmp::Ordering::Equal,
         });
 
         // Add parent directory entry at the beginning if not at root
         if has_parent {
-            self.entries.insert(0, FileEntry::ParentDirectory(
-                self.current_dir.parent().unwrap().to_path_buf(),
-            ));
+            self.entries.insert(
+                0,
+                FileEntry::ParentDirectory(self.current_dir.parent().unwrap().to_path_buf()),
+            );
         }
 
         self.selected = 0;
@@ -112,6 +115,13 @@ impl Browser {
 
     pub fn current_dir(&self) -> &Path {
         &self.current_dir
+    }
+
+    pub fn navigate_to(&mut self, path: PathBuf) {
+        if path.is_dir() {
+            self.current_dir = path;
+            self.load_entries();
+        }
     }
 
     pub fn entries(&self) -> &[FileEntry] {
@@ -165,12 +175,12 @@ impl Browser {
     }
 }
 
-fn is_audio_file(path: &Path) -> bool {
+pub fn is_audio_file(path: &Path) -> bool {
     if let Some(ext) = path.extension() {
         if let Some(ext_str) = ext.to_str() {
             matches!(
                 ext_str.to_lowercase().as_str(),
-                "mp3" | "flac" | "ogg" | "wav" | "m4a" | "aac" | "alac"
+                "mp3" | "flac" | "ogg" | "wav" | "m4a" | "aac" | "alac" | "opus"
             )
         } else {
             false

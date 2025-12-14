@@ -1,4 +1,4 @@
-use crate::browser::Browser;
+use crate::browser::{is_audio_file, Browser};
 use crate::config::Config;
 use crate::player::Player;
 use crate::playlist::PlaylistManager;
@@ -15,7 +15,10 @@ use ratatui::{
     widgets::{Block, Borders, List, ListItem, Paragraph},
     Frame, Terminal,
 };
+use ratatui_image::{picker::Picker, protocol::StatefulProtocol};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use walkdir::WalkDir;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Tab {
@@ -75,16 +78,22 @@ pub struct App {
     playlist_track_selected: usize,
     should_quit: bool,
     status_message: String,
+    image_picker: Arc<Mutex<Picker>>,
+    album_art: Arc<Mutex<Option<Box<dyn StatefulProtocol>>>>,
 }
 
 impl App {
     pub fn new(config: Config) -> Result<Self> {
         let player = Player::new()?;
         player.set_volume(config.volume);
-        
+
         let browser = Browser::new(config.music_dir.clone());
         let queue = Queue::new();
         let playlist_manager = PlaylistManager::new(config.playlist_dir.clone());
+
+        // Initialize image picker for album art display
+        let mut picker = Picker::from_termios().unwrap_or_else(|_| Picker::new((8, 12)));
+        picker.guess_protocol();
 
         Ok(Self {
             player,
@@ -101,6 +110,8 @@ impl App {
             playlist_track_selected: 0,
             should_quit: false,
             status_message: String::from("Welcome to Impulse! Press '?' for help"),
+            image_picker: Arc::new(Mutex::new(picker)),
+            album_art: Arc::new(Mutex::new(None)),
         })
     }
 
@@ -142,7 +153,7 @@ impl App {
             }
             KeyCode::Char('?') => {
                 self.status_message = String::from(
-                    "Keys: j/k=nav, l/Enter=select, h=back, Space=play/pause, n=next, p=prev, a=add, A=add-all, Tab/1-4=switch-tab, /=search, q=quit"
+                    "Keys: j/k/↑/↓=nav, l/→/Enter=select, h/←=back, Space=play/pause, n=next, p=prev, a=add, A=add-all, Tab/1-4=switch-tab, /=search, q=quit"
                 );
             }
             KeyCode::Char('1') => {
@@ -227,7 +238,7 @@ impl App {
             KeyCode::Char('G') => {
                 self.browser.select_last();
             }
-            KeyCode::Char('l') | KeyCode::Enter => {
+            KeyCode::Char('l') | KeyCode::Enter | KeyCode::Right => {
                 if let Some(track) = self.browser.enter_selected() {
                     self.queue.add(track.clone());
                     self.status_message = format!("Added to queue: {}", track.display());
@@ -239,7 +250,7 @@ impl App {
                     }
                 }
             }
-            KeyCode::Char('h') => {
+            KeyCode::Char('h') | KeyCode::Left => {
                 if let Some(parent) = self.browser.current_dir().parent() {
                     self.browser = Browser::new(parent.to_path_buf());
                 }
@@ -402,23 +413,83 @@ impl App {
         }
 
         let matcher = SkimMatcherV2::default();
-        let entries: Vec<_> = self.browser.entries().to_vec();
-        
-        for (i, entry) in entries.iter().enumerate() {
-            if let Some(_score) = matcher.fuzzy_match(&entry.name(), &self.search_query) {
-                // Found a match, navigate to it
-                self.browser.select_index(i);
-                self.status_message = format!("Found: {}", entry.name());
-                return;
+        let mut best_match: Option<(i64, usize, bool, std::path::PathBuf)> = None;
+
+        for entry in WalkDir::new(self.browser.current_dir())
+            .follow_links(true)
+            .into_iter()
+            .filter_map(|e| e.ok())
+        {
+            let path = entry.path();
+            let (name_opt, is_dir) = if entry.file_type().is_dir() {
+                (path.file_name().and_then(|n| n.to_str()), true)
+            } else if is_audio_file(path) {
+                (
+                    path.file_stem()
+                        .or_else(|| path.file_name())
+                        .and_then(|n| n.to_str()),
+                    false,
+                )
+            } else {
+                continue;
+            };
+
+            let Some(name) = name_opt else { continue };
+
+            if let Some(score) = matcher.fuzzy_match(name, &self.search_query) {
+                let depth = entry.depth();
+                match best_match {
+                    None => best_match = Some((score, depth, is_dir, path.to_path_buf())),
+                    Some((best_score, best_depth, _, _))
+                        if score > best_score || (score == best_score && depth < best_depth) =>
+                    {
+                        best_match = Some((score, depth, is_dir, path.to_path_buf()));
+                    }
+                    _ => {}
+                }
             }
         }
 
-        self.status_message = format!("No match found for: {}", self.search_query);
+        if let Some((_score, _depth, is_dir, path)) = best_match {
+            if is_dir {
+                self.browser.navigate_to(path.clone());
+                let dir_name = path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .map(|n| n.to_string())
+                    .unwrap_or_else(|| path.to_string_lossy().into_owned());
+                self.status_message = format!("Found directory: {}", dir_name);
+            } else {
+                let parent = path
+                    .parent()
+                    .map(|p| p.to_path_buf())
+                    .unwrap_or_else(|| self.browser.current_dir().to_path_buf());
+                self.browser.navigate_to(parent.clone());
+
+                if let Some(index) = self
+                    .browser
+                    .entries()
+                    .iter()
+                    .position(|entry| entry.path() == path)
+                {
+                    self.browser.select_index(index);
+                }
+
+                let album_name = parent
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .map(|n| n.to_string())
+                    .unwrap_or_else(|| parent.to_string_lossy().into_owned());
+                self.status_message = format!("Found track in: {}", album_name);
+            }
+        } else {
+            self.status_message = format!("No match found for: {}", self.search_query);
+        }
     }
 
     fn execute_command(&mut self) -> Result<()> {
-        let parts: Vec<&str> = self.command_input.trim().split_whitespace().collect();
-        
+        let parts: Vec<&str> = self.command_input.split_whitespace().collect();
+
         if parts.is_empty() {
             return Ok(());
         }
@@ -469,7 +540,7 @@ impl App {
         }
     }
 
-    fn draw(&self, f: &mut Frame) {
+    fn draw(&mut self, f: &mut Frame) {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
@@ -485,12 +556,7 @@ impl App {
     }
 
     fn draw_tabs(&self, f: &mut Frame, area: Rect) {
-        let tabs = vec![
-            Tab::Browser,
-            Tab::Queue,
-            Tab::Player,
-            Tab::Playlists,
-        ];
+        let tabs = [Tab::Browser, Tab::Queue, Tab::Player, Tab::Playlists];
 
         let mut tab_text = String::new();
         for (i, tab) in tabs.iter().enumerate() {
@@ -500,13 +566,13 @@ impl App {
             tab_text.push_str(&format!(" {} ", tab.name()));
         }
 
-        let tabs_widget = Paragraph::new(tab_text)
-            .block(Block::default().borders(Borders::ALL).title("Tabs"));
+        let tabs_widget =
+            Paragraph::new(tab_text).block(Block::default().borders(Borders::ALL).title("Tabs"));
 
         f.render_widget(tabs_widget, area);
     }
 
-    fn draw_content(&self, f: &mut Frame, area: Rect) {
+    fn draw_content(&mut self, f: &mut Frame, area: Rect) {
         match self.current_tab {
             Tab::Browser => self.draw_browser(f, area),
             Tab::Queue => self.draw_queue(f, area),
@@ -552,11 +618,11 @@ impl App {
             .enumerate()
             .map(|(i, track)| {
                 let mut style = Style::default();
-                
+
                 if Some(i) == current_index {
                     style = style.fg(Color::Green);
                 }
-                
+
                 if i == self.queue_selected {
                     style = style.add_modifier(Modifier::BOLD).fg(Color::Yellow);
                 }
@@ -566,8 +632,12 @@ impl App {
                     .and_then(|n| n.to_str())
                     .unwrap_or("")
                     .to_string();
-                
-                let prefix = if Some(i) == current_index { "▶ " } else { "  " };
+
+                let prefix = if Some(i) == current_index {
+                    "▶ "
+                } else {
+                    "  "
+                };
                 ListItem::new(format!("{}{}", prefix, name)).style(style)
             })
             .collect();
@@ -580,17 +650,157 @@ impl App {
         f.render_widget(list, area);
     }
 
-    fn draw_player(&self, f: &mut Frame, area: Rect) {
+    fn draw_player(&mut self, f: &mut Frame, area: Rect) {
+        let metadata = self.player.current_metadata();
+
+        // Split area: left for album art, right for metadata
+        let chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Length(40), Constraint::Min(0)])
+            .split(area);
+
+        // Draw album art if available
+        if let Some(ref meta) = metadata {
+            if let Some(ref cover_data) = meta.cover_art {
+                // Try to load and display the album art
+                match image::load_from_memory(cover_data) {
+                    Ok(img) => {
+                        let mut picker = self.image_picker.lock().unwrap();
+                        let mut album_art = self.album_art.lock().unwrap();
+
+                        // Create or update the album art protocol
+                        *album_art = Some(picker.new_resize_protocol(img));
+
+                        if let Some(ref mut protocol) = *album_art {
+                            let image_widget = ratatui_image::StatefulImage::new(None);
+                            drop(picker); // Release lock before rendering
+                            f.render_stateful_widget(image_widget, chunks[0], protocol);
+                        }
+                    }
+                    Err(_) => {
+                        // Failed to decode album art
+                        let placeholder = Paragraph::new("Invalid Album Art")
+                            .block(Block::default().borders(Borders::ALL))
+                            .style(Style::default().fg(Color::Red));
+                        f.render_widget(placeholder, chunks[0]);
+                    }
+                }
+            } else {
+                // No album art - show placeholder
+                let placeholder = Paragraph::new("No Album Art")
+                    .block(Block::default().borders(Borders::ALL))
+                    .style(Style::default().fg(Color::DarkGray));
+                f.render_widget(placeholder, chunks[0]);
+            }
+        } else {
+            let placeholder = Paragraph::new("No Album Art")
+                .block(Block::default().borders(Borders::ALL))
+                .style(Style::default().fg(Color::DarkGray));
+            f.render_widget(placeholder, chunks[0]);
+        }
+
+        // Draw metadata
         let mut text = vec![];
 
-        if let Some(track) = self.player.current_track() {
+        if let Some(ref meta) = metadata {
+            // Title
+            let title = meta.title.clone().unwrap_or_else(|| {
+                self.player
+                    .current_track()
+                    .and_then(|t| {
+                        t.file_name()
+                            .and_then(|n| n.to_str())
+                            .map(|s| s.to_string())
+                    })
+                    .unwrap_or_else(|| "Unknown".to_string())
+            });
+            text.push(Line::from(vec![
+                Span::styled(
+                    "Title: ",
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::raw(title),
+            ]));
+
+            // Artist
+            if let Some(ref artist) = meta.artist {
+                text.push(Line::from(vec![
+                    Span::styled("Artist: ", Style::default().fg(Color::Cyan)),
+                    Span::raw(artist),
+                ]));
+            }
+
+            // Album
+            if let Some(ref album) = meta.album {
+                text.push(Line::from(vec![
+                    Span::styled("Album: ", Style::default().fg(Color::Cyan)),
+                    Span::raw(album),
+                ]));
+            }
+
+            // Album Artist (if different from artist)
+            if let Some(ref album_artist) = meta.album_artist {
+                if meta.artist.as_ref() != Some(album_artist) {
+                    text.push(Line::from(vec![
+                        Span::styled("Album Artist: ", Style::default().fg(Color::Cyan)),
+                        Span::raw(album_artist),
+                    ]));
+                }
+            }
+
+            // Year
+            if let Some(ref year) = meta.year {
+                text.push(Line::from(vec![
+                    Span::styled("Year: ", Style::default().fg(Color::Cyan)),
+                    Span::raw(year),
+                ]));
+            }
+
+            // Genre
+            if let Some(ref genre) = meta.genre {
+                text.push(Line::from(vec![
+                    Span::styled("Genre: ", Style::default().fg(Color::Cyan)),
+                    Span::raw(genre),
+                ]));
+            }
+
+            // Track and Disc Number
+            if let Some(ref track_num) = meta.track_number {
+                let mut track_info = track_num.clone();
+                if let Some(ref disc_num) = meta.disc_number {
+                    track_info = format!("{} (Disc {})", track_num, disc_num);
+                }
+                text.push(Line::from(vec![
+                    Span::styled("Track: ", Style::default().fg(Color::Cyan)),
+                    Span::raw(track_info),
+                ]));
+            }
+
+            // Duration
+            text.push(Line::from(vec![
+                Span::styled("Duration: ", Style::default().fg(Color::Cyan)),
+                Span::raw(meta.format_duration()),
+            ]));
+
+            text.push(Line::from(""));
+
+            // File path
+            if let Some(track) = self.player.current_track() {
+                text.push(Line::from(vec![
+                    Span::styled("Path: ", Style::default().fg(Color::Gray)),
+                    Span::raw(track.display().to_string()),
+                ]));
+            }
+        } else if let Some(track) = self.player.current_track() {
+            // No metadata available, show basic info
             let track_name = track
                 .file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("Unknown")
                 .to_string();
-            let track_path = track.display().to_string();
-            
+
             text.push(Line::from(vec![
                 Span::styled("Now Playing: ", Style::default().fg(Color::Cyan)),
                 Span::raw(track_name),
@@ -598,14 +808,15 @@ impl App {
             text.push(Line::from(""));
             text.push(Line::from(vec![
                 Span::styled("Path: ", Style::default().fg(Color::Gray)),
-                Span::raw(track_path),
+                Span::raw(track.display().to_string()),
             ]));
         } else {
             text.push(Line::from("No track playing"));
         }
 
         text.push(Line::from(""));
-        
+
+        // Playback status
         let status = if self.player.is_playing() {
             "▶ Playing"
         } else if self.player.is_paused() {
@@ -613,7 +824,7 @@ impl App {
         } else {
             "⏹ Stopped"
         };
-        
+
         text.push(Line::from(vec![
             Span::styled("Status: ", Style::default().fg(Color::Cyan)),
             Span::raw(status),
@@ -624,10 +835,10 @@ impl App {
             Span::raw(format!("{:.0}%", self.config.volume * 100.0)),
         ]));
 
-        let paragraph = Paragraph::new(text)
-            .block(Block::default().borders(Borders::ALL).title("Player"));
+        let paragraph =
+            Paragraph::new(text).block(Block::default().borders(Borders::ALL).title("Player"));
 
-        f.render_widget(paragraph, area);
+        f.render_widget(paragraph, chunks[1]);
     }
 
     fn draw_playlists(&self, f: &mut Frame, area: Rect) {

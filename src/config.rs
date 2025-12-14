@@ -43,7 +43,7 @@ impl Default for Config {
 impl Config {
     pub fn load() -> Result<Self> {
         let config_path = Self::config_path();
-        
+
         if config_path.exists() {
             let content = fs::read_to_string(&config_path)?;
             let config: Config = toml::from_str(&content)?;
@@ -57,7 +57,7 @@ impl Config {
 
     pub fn save(&self) -> Result<()> {
         let config_path = Self::config_path();
-        
+
         if let Some(parent) = config_path.parent() {
             fs::create_dir_all(parent)?;
         }
