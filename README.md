@@ -16,11 +16,42 @@ Minimalist music player with minimal dependencies, focusing on speed and a keybo
 
 ## Installation
 
+### Using Cargo
+
 ```bash
 cargo build --release
 ```
 
 The binary will be available at `target/release/impulse`.
+
+### Using Nix Flakes
+
+For Nix users, you can build and run directly:
+
+```bash
+# Run directly
+nix run github:dbeley/impulse
+
+# Build and install
+nix build github:dbeley/impulse
+./result/bin/impulse
+
+# Enter development shell
+nix develop
+```
+
+### NixOS Configuration
+
+Add to your NixOS configuration:
+
+```nix
+{
+  inputs.impulse.url = "github:dbeley/impulse";
+  
+  # In your configuration.nix or home.nix:
+  programs.impulse.enable = true;
+}
+```
 
 ## Usage
 
@@ -97,11 +128,60 @@ MP3, FLAC, OGG, WAV, M4A, AAC, Opus, WMA
 
 ## Requirements
 
-- Rust 1.70 or later
+- Rust 1.70 or later (or Nix with flakes enabled)
 - ALSA development libraries (Linux)
   - Ubuntu/Debian: `sudo apt-get install libasound2-dev`
   - Fedora: `sudo dnf install alsa-lib-devel`
   - Arch: `sudo pacman -S alsa-lib`
+  - NixOS: Automatically provided in the dev shell
+
+## Development
+
+### Setting up the Development Environment
+
+#### With Nix (Recommended)
+
+```bash
+# Enter the development shell
+nix develop
+
+# All dependencies and tools are automatically available
+cargo build
+cargo test
+cargo clippy
+```
+
+#### Without Nix
+
+Install Rust and the required system dependencies, then:
+
+```bash
+cargo build
+```
+
+### Pre-commit Hooks
+
+This project uses [prek](https://github.com/pinage404/prek) for managing pre-commit hooks.
+
+```bash
+# Install prek (if not using Nix)
+cargo install prek
+
+# Run pre-commit checks
+prek run
+
+# Run checks on all files
+prek run --all
+
+# Install git hooks (optional)
+prek install
+```
+
+The pre-commit configuration includes:
+- `cargo fmt` - Code formatting check
+- `cargo clippy` - Linting
+- `cargo check` - Compilation check
+- File hygiene checks (trailing whitespace, YAML/TOML validation, etc.)
 
 ## Architecture
 

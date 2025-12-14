@@ -4,17 +4,52 @@ Thank you for your interest in contributing to Impulse!
 
 ## Getting Started
 
+### Using Nix (Recommended)
+
 1. Fork the repository
 2. Clone your fork: `git clone https://github.com/YOUR_USERNAME/impulse.git`
-3. Create a new branch: `git checkout -b feature/your-feature-name`
-4. Make your changes
-5. Test your changes: `cargo test`
-6. Build the project: `cargo build --release`
-7. Commit your changes: `git commit -am 'Add some feature'`
-8. Push to the branch: `git push origin feature/your-feature-name`
-9. Submit a pull request
+3. Enter the development environment: `nix develop`
+4. Create a new branch: `git checkout -b feature/your-feature-name`
+5. Make your changes
+6. Run pre-commit checks: `prek run` (automatically available in Nix shell)
+7. Test your changes: `cargo test`
+8. Build the project: `cargo build --release`
+9. Commit your changes: `git commit -am 'Add some feature'`
+10. Push to the branch: `git push origin feature/your-feature-name`
+11. Submit a pull request
+
+### Without Nix
+
+1. Fork the repository
+2. Clone your fork: `git clone https://github.com/YOUR_USERNAME/impulse.git`
+3. Install Rust and system dependencies (see README.md)
+4. Create a new branch: `git checkout -b feature/your-feature-name`
+5. Make your changes
+6. Test your changes: `cargo test`
+7. Build the project: `cargo build --release`
+8. Commit your changes: `git commit -am 'Add some feature'`
+9. Push to the branch: `git push origin feature/your-feature-name`
+10. Submit a pull request
 
 ## Development Guidelines
+
+### Pre-commit Hooks
+
+This project uses prek for pre-commit hooks. Before committing:
+
+```bash
+# Run all pre-commit checks
+prek run
+
+# Or run on all files
+prek run --all
+```
+
+The hooks will automatically check:
+- Code formatting (`cargo fmt`)
+- Linting (`cargo clippy`)
+- Compilation (`cargo check`)
+- File hygiene (trailing whitespace, YAML/TOML validation)
 
 ### Code Style
 
