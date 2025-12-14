@@ -1,0 +1,114 @@
+use std::path::PathBuf;
+
+#[derive(Debug, Clone)]
+pub struct Queue {
+    tracks: Vec<PathBuf>,
+    current_index: Option<usize>,
+}
+
+impl Queue {
+    pub fn new() -> Self {
+        Self {
+            tracks: Vec::new(),
+            current_index: None,
+        }
+    }
+
+    pub fn add(&mut self, track: PathBuf) {
+        self.tracks.push(track);
+        if self.current_index.is_none() && !self.tracks.is_empty() {
+            self.current_index = Some(0);
+        }
+    }
+
+    pub fn add_multiple(&mut self, tracks: Vec<PathBuf>) {
+        for track in tracks {
+            self.tracks.push(track);
+        }
+        if self.current_index.is_none() && !self.tracks.is_empty() {
+            self.current_index = Some(0);
+        }
+    }
+
+    pub fn remove(&mut self, index: usize) {
+        if index < self.tracks.len() {
+            self.tracks.remove(index);
+            
+            // Update current_index if needed
+            if let Some(current) = self.current_index {
+                if current == index {
+                    self.current_index = if self.tracks.is_empty() {
+                        None
+                    } else if current >= self.tracks.len() {
+                        Some(self.tracks.len() - 1)
+                    } else {
+                        Some(current)
+                    };
+                } else if current > index {
+                    self.current_index = Some(current - 1);
+                }
+            }
+        }
+    }
+
+    pub fn clear(&mut self) {
+        self.tracks.clear();
+        self.current_index = None;
+    }
+
+    pub fn current(&self) -> Option<&PathBuf> {
+        self.current_index
+            .and_then(|idx| self.tracks.get(idx))
+    }
+
+    pub fn next(&mut self) -> Option<&PathBuf> {
+        if let Some(current) = self.current_index {
+            if current + 1 < self.tracks.len() {
+                self.current_index = Some(current + 1);
+                return self.current();
+            }
+        }
+        None
+    }
+
+    pub fn prev(&mut self) -> Option<&PathBuf> {
+        if let Some(current) = self.current_index {
+            if current > 0 {
+                self.current_index = Some(current - 1);
+                return self.current();
+            }
+        }
+        None
+    }
+
+    pub fn jump_to(&mut self, index: usize) -> Option<&PathBuf> {
+        if index < self.tracks.len() {
+            self.current_index = Some(index);
+            self.current()
+        } else {
+            None
+        }
+    }
+
+    pub fn tracks(&self) -> &[PathBuf] {
+        &self.tracks
+    }
+
+    pub fn current_index(&self) -> Option<usize> {
+        self.current_index
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.tracks.is_empty()
+    }
+
+    pub fn len(&self) -> usize {
+        self.tracks.len()
+    }
+}
+
+impl Default for Queue {
+    fn default() -> Self {
+        Self::new()
+    }
+}
