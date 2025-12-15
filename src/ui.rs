@@ -25,17 +25,15 @@ use walkdir::WalkDir;
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Tab {
     Browser,
-    Queue,
-    Player,
+    NowPlaying,
     Playlists,
 }
 
 impl Tab {
     fn next(&self) -> Self {
         match self {
-            Tab::Browser => Tab::Queue,
-            Tab::Queue => Tab::Player,
-            Tab::Player => Tab::Playlists,
+            Tab::Browser => Tab::NowPlaying,
+            Tab::NowPlaying => Tab::Playlists,
             Tab::Playlists => Tab::Browser,
         }
     }
@@ -43,18 +41,16 @@ impl Tab {
     fn prev(&self) -> Self {
         match self {
             Tab::Browser => Tab::Playlists,
-            Tab::Queue => Tab::Browser,
-            Tab::Player => Tab::Queue,
-            Tab::Playlists => Tab::Player,
+            Tab::NowPlaying => Tab::Browser,
+            Tab::Playlists => Tab::NowPlaying,
         }
     }
 
     fn name(&self) -> &str {
         match self {
             Tab::Browser => "1. Browser",
-            Tab::Queue => "2. Queue",
-            Tab::Player => "3. Player",
-            Tab::Playlists => "4. Playlists",
+            Tab::NowPlaying => "2. Now Playing",
+            Tab::Playlists => "3. Playlists",
         }
     }
 }
@@ -181,19 +177,16 @@ impl App {
             }
             KeyCode::Char('?') => {
                 self.status_message = String::from(
-                    "Keys: j/k/↑/↓=nav, l/→/Enter=select, h/←=back, Space=play/pause, n=next, p=prev, a=add, A=add-all, Tab/1-4=switch-tab, /=search, q=quit"
+                    "Keys: j/k/↑/↓=nav, l/→/Enter=select, h/←=back, Space=play/pause, n=next, p=prev, a=add, A=add-all, Tab/1-3=switch-tab, /=search, q=quit"
                 );
             }
             KeyCode::Char('1') => {
                 self.current_tab = Tab::Browser;
             }
             KeyCode::Char('2') => {
-                self.current_tab = Tab::Queue;
+                self.current_tab = Tab::NowPlaying;
             }
             KeyCode::Char('3') => {
-                self.current_tab = Tab::Player;
-            }
-            KeyCode::Char('4') => {
                 self.current_tab = Tab::Playlists;
             }
             KeyCode::Tab => {
@@ -248,10 +241,16 @@ impl App {
     fn handle_tab_keys(&mut self, key: KeyEvent) -> Result<()> {
         match self.current_tab {
             Tab::Browser => self.handle_browser_keys(key)?,
-            Tab::Queue => self.handle_queue_keys(key)?,
-            Tab::Player => self.handle_player_keys(key)?,
+            Tab::NowPlaying => self.handle_now_playing_keys(key)?,
             Tab::Playlists => self.handle_playlist_keys(key)?,
         }
+        Ok(())
+    }
+
+    fn handle_now_playing_keys(&mut self, key: KeyEvent) -> Result<()> {
+        // Allow queue navigation/manipulation and player controls in the combined view
+        self.handle_queue_keys(key)?;
+        self.handle_player_keys(key)?;
         Ok(())
     }
 
@@ -534,11 +533,20 @@ impl App {
                 .unwrap_or("")
                 .to_string();
 
-            if let Some(score) = matcher.fuzzy_match(&name, query) {
-                let folder = path
-                    .parent()
-                    .map(|p| p.to_path_buf())
-                    .unwrap_or_else(|| self.browser.current_dir().to_path_buf());
+            let folder = path
+                .parent()
+                .map(|p| p.to_path_buf())
+                .unwrap_or_else(|| self.browser.current_dir().to_path_buf());
+
+            let folder_name = folder.file_name().and_then(|n| n.to_str()).unwrap_or("");
+
+            let searchable_name = if folder_name.is_empty() {
+                name.clone()
+            } else {
+                format!("{} {}", folder_name, name)
+            };
+
+            if let Some(score) = matcher.fuzzy_match(&searchable_name, query) {
                 results.push(SearchResult {
                     path: path.to_path_buf(),
                     folder,
@@ -677,7 +685,7 @@ impl App {
                 Constraint::Min(0),
                 Constraint::Length(3),
             ])
-            .split(f.size());
+            .split(f.area());
 
         self.draw_tabs(f, chunks[0]);
         self.draw_content(f, chunks[1]);
@@ -688,7 +696,7 @@ impl App {
     }
 
     fn draw_tabs(&self, f: &mut Frame, area: Rect) {
-        let tabs = [Tab::Browser, Tab::Queue, Tab::Player, Tab::Playlists];
+        let tabs = [Tab::Browser, Tab::NowPlaying, Tab::Playlists];
 
         let mut tab_text = String::new();
         for (i, tab) in tabs.iter().enumerate() {
@@ -707,8 +715,7 @@ impl App {
     fn draw_content(&mut self, f: &mut Frame, area: Rect) {
         match self.current_tab {
             Tab::Browser => self.draw_browser(f, area),
-            Tab::Queue => self.draw_queue(f, area),
-            Tab::Player => self.draw_player(f, area),
+            Tab::NowPlaying => self.draw_now_playing(f, area),
             Tab::Playlists => self.draw_playlists(f, area),
         }
     }
@@ -739,6 +746,16 @@ impl App {
             .highlight_style(Style::default().add_modifier(Modifier::REVERSED));
 
         f.render_widget(list, area);
+    }
+
+    fn draw_now_playing(&mut self, f: &mut Frame, area: Rect) {
+        let chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+            .split(area);
+
+        self.draw_queue(f, chunks[0]);
+        self.draw_player(f, chunks[1]);
     }
 
     fn draw_queue(&self, f: &mut Frame, area: Rect) {
@@ -1002,7 +1019,7 @@ impl App {
     }
 
     fn draw_search_overlay(&self, f: &mut Frame) {
-        let area = centered_rect(60, 50, f.size());
+        let area = centered_rect(60, 50, f.area());
         let items: Vec<ListItem> = self
             .search_results
             .iter()
@@ -1047,7 +1064,7 @@ impl App {
 
     fn start_track(&mut self, track: &Path) {
         *self.track_play_time.lock().unwrap() = Some(SystemTime::now());
-        
+
         // Update now playing on Last.fm if enabled
         if self.lastfm_scrobbler.is_enabled() {
             if let Some(metadata) = self.player.current_metadata() {
@@ -1073,7 +1090,7 @@ impl App {
                         .duration_since(start_time)
                         .unwrap_or(Duration::from_secs(0))
                         .as_secs();
-                    
+
                     let should_scrobble = if let Some(duration) = metadata.duration_secs {
                         // Track must be played for at least half its duration or 4 minutes (whichever is lower)
                         elapsed >= (duration / 2).min(240)

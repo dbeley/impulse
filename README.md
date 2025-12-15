@@ -140,6 +140,8 @@ Impulse supports scrobbling your listening history to Last.fm. To enable this fe
    - You can use online tools or the Last.fm authentication flow
    - See https://www.last.fm/api/authentication for details
 
+   Impulse can now detect when the API key/secret are set but no session key exists, and will guide you through the Last.fm authentication flow (opening the browser and storing the returned session key in your config) automatically on first startup.
+
 3. **Configure Impulse**:
    Add the following to your `~/.config/impulse/config.toml`:
    ```toml
@@ -245,7 +247,3 @@ Impulse is built with a modular architecture:
 - **Playlist Manager**: M3U playlist loading and management
 - **Config**: TOML-based configuration file handling
 - **UI**: Terminal UI built with ratatui and crossterm
-
-## License
-
-MIT
