@@ -1,6 +1,9 @@
+use anyhow::{Context, Result};
+use serde::{Deserialize, Serialize};
+use std::fs;
 use std::path::PathBuf;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Queue {
     tracks: Vec<PathBuf>,
     current_index: Option<usize>,
@@ -133,6 +136,40 @@ impl Queue {
                 self.current_index = Some(index);
             }
         }
+    }
+
+    pub fn save(&self) -> Result<()> {
+        let queue_path = Self::queue_path();
+
+        if let Some(parent) = queue_path.parent() {
+            fs::create_dir_all(parent).with_context(|| {
+                format!("Failed to create queue directory {}", parent.display())
+            })?;
+        }
+
+        let content = serde_json::to_string_pretty(self)?;
+        fs::write(&queue_path, content)
+            .with_context(|| format!("Failed to write queue file at {}", queue_path.display()))?;
+        Ok(())
+    }
+
+    pub fn load() -> Result<Self> {
+        let queue_path = Self::queue_path();
+
+        if queue_path.exists() {
+            let content = fs::read_to_string(&queue_path)?;
+            let queue: Queue = serde_json::from_str(&content)?;
+            Ok(queue)
+        } else {
+            Ok(Queue::new())
+        }
+    }
+
+    fn queue_path() -> PathBuf {
+        dirs::data_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("impulse")
+            .join("queue.json")
     }
 }
 

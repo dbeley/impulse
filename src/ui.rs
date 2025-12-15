@@ -102,7 +102,7 @@ impl App {
         player.set_volume(config.volume);
 
         let browser = Browser::new(config.music_dir.clone());
-        let queue = Queue::new();
+        let queue = Queue::load().unwrap_or_else(|_| Queue::new());
         let playlist_manager = PlaylistManager::new(config.playlist_dir.clone());
 
         // Initialize image picker for album art display
@@ -173,6 +173,8 @@ impl App {
             }
 
             if self.should_quit {
+                // Save queue before quitting
+                let _ = self.queue.save();
                 break;
             }
         }
