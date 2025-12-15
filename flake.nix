@@ -55,7 +55,7 @@
             lockFile = ./Cargo.lock;
           };
 
-          nativeBuildInputs = nativeBuildInputs;
+          nativeBuildInputs = with pkgs; [ pkg-config cmake ];
           buildInputs = buildInputs;
 
           meta = with pkgs.lib; {
