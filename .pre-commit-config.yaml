@@ -10,7 +10,7 @@ repos:
         name: cargo fmt
         description: Check Rust code formatting
         entry: cargo fmt
-        args: ["--", "--check"]
+        args: ["--"]
         language: system
         files: \.rs$
         pass_filenames: false

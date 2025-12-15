@@ -13,6 +13,7 @@ Minimalist music player with minimal dependencies, focusing on speed and a keybo
 - ⚙️  **Configuration file** - Customize settings via TOML config
 - 🚀 **Minimal dependencies** - Fast and lightweight
 - 🎶 **Multiple format support** - MP3, FLAC, OGG Vorbis, Opus, WAV, M4A, AAC, ALAC
+- 🎧 **Last.fm scrobbling** - Optional support for scrobbling to Last.fm
 
 ## Installation
 
@@ -126,6 +127,36 @@ volume = 0.5
 
 See `config.toml.example` for a complete example configuration.
 
+### Last.fm Scrobbling (Optional)
+
+Impulse supports scrobbling your listening history to Last.fm. To enable this feature:
+
+1. **Obtain Last.fm API credentials**:
+   - Create an API account at https://www.last.fm/api/account/create
+   - You'll receive an API key and API secret
+
+2. **Generate a session key**:
+   - You need to authenticate once to get a session key
+   - You can use online tools or the Last.fm authentication flow
+   - See https://www.last.fm/api/authentication for details
+
+   Impulse can now detect when the API key/secret are set but no session key exists, and will guide you through the Last.fm authentication flow (opening the browser and storing the returned session key in your config) automatically on first startup.
+
+3. **Configure Impulse**:
+   Add the following to your `~/.config/impulse/config.toml`:
+   ```toml
+   [lastfm]
+   enabled = true
+   api_key = "your_lastfm_api_key"
+   api_secret = "your_lastfm_api_secret"
+   session_key = "your_lastfm_session_key"
+   ```
+
+Once configured, Impulse will automatically:
+- Update "Now Playing" status when you start a track
+- Scrobble tracks after you've listened to at least half the duration (or 4 minutes, whichever is lower)
+- Follow Last.fm's scrobbling guidelines
+
 ### Command Mode
 
 Type `:` to enter command mode. Available commands:
@@ -199,24 +230,3 @@ prek run --all
 # Install git hooks (optional)
 prek install
 ```
-
-The pre-commit configuration includes:
-- `cargo fmt` - Code formatting check
-- `cargo clippy` - Linting
-- `cargo check` - Compilation check
-- File hygiene checks (trailing whitespace, YAML/TOML validation, etc.)
-
-## Architecture
-
-Impulse is built with a modular architecture:
-
-- **Browser**: File system navigation with directory and audio file detection
-- **Queue**: Track queue management with add, remove, and navigation
-- **Player**: Audio playback using the rodio library
-- **Playlist Manager**: M3U playlist loading and management
-- **Config**: TOML-based configuration file handling
-- **UI**: Terminal UI built with ratatui and crossterm
-
-## License
-
-MIT

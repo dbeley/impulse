@@ -1,5 +1,6 @@
 use crate::browser::{is_audio_file, Browser};
 use crate::config::Config;
+use crate::lastfm::LastfmScrobbler;
 use crate::player::Player;
 use crate::playlist::PlaylistManager;
 use crate::queue::Queue;
@@ -16,7 +17,7 @@ use ratatui::{
     Frame, Terminal,
 };
 use ratatui_image::{picker::Picker, protocol::StatefulProtocol};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 use walkdir::WalkDir;
@@ -24,17 +25,15 @@ use walkdir::WalkDir;
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Tab {
     Browser,
-    Queue,
-    Player,
+    NowPlaying,
     Playlists,
 }
 
 impl Tab {
     fn next(&self) -> Self {
         match self {
-            Tab::Browser => Tab::Queue,
-            Tab::Queue => Tab::Player,
-            Tab::Player => Tab::Playlists,
+            Tab::Browser => Tab::NowPlaying,
+            Tab::NowPlaying => Tab::Playlists,
             Tab::Playlists => Tab::Browser,
         }
     }
@@ -42,18 +41,16 @@ impl Tab {
     fn prev(&self) -> Self {
         match self {
             Tab::Browser => Tab::Playlists,
-            Tab::Queue => Tab::Browser,
-            Tab::Player => Tab::Queue,
-            Tab::Playlists => Tab::Player,
+            Tab::NowPlaying => Tab::Browser,
+            Tab::Playlists => Tab::NowPlaying,
         }
     }
 
     fn name(&self) -> &str {
         match self {
             Tab::Browser => "1. Browser",
-            Tab::Queue => "2. Queue",
-            Tab::Player => "3. Player",
-            Tab::Playlists => "4. Playlists",
+            Tab::NowPlaying => "2. Now Playing",
+            Tab::Playlists => "3. Playlists",
         }
     }
 }
@@ -92,6 +89,8 @@ pub struct App {
     status_message: String,
     image_picker: Arc<Mutex<Picker>>,
     album_art: Arc<Mutex<Option<Box<dyn StatefulProtocol>>>>,
+    lastfm_scrobbler: LastfmScrobbler,
+    track_play_time: Arc<Mutex<Option<SystemTime>>>,
 }
 
 impl App {
@@ -106,6 +105,9 @@ impl App {
         // Initialize image picker for album art display
         let mut picker = Picker::from_termios().unwrap_or_else(|_| Picker::new((8, 12)));
         picker.guess_protocol();
+
+        // Initialize Last.fm scrobbler
+        let lastfm_scrobbler = LastfmScrobbler::new(config.lastfm.as_ref())?;
 
         Ok(Self {
             player,
@@ -126,6 +128,8 @@ impl App {
             status_message: String::from("Welcome to Impulse! Press '?' for help"),
             image_picker: Arc::new(Mutex::new(picker)),
             album_art: Arc::new(Mutex::new(None)),
+            lastfm_scrobbler,
+            track_play_time: Arc::new(Mutex::new(None)),
         })
     }
 
@@ -141,7 +145,12 @@ impl App {
 
             // Check if current track finished
             if self.player.is_finished() && !self.queue.is_empty() {
+                // Scrobble the finished track if enough time has passed
+                self.scrobble_if_needed();
                 self.play_next();
+            } else if self.player.is_finished() {
+                // Track finished but queue is empty, scrobble it
+                self.scrobble_if_needed();
             }
 
             if self.should_quit {
@@ -168,19 +177,16 @@ impl App {
             }
             KeyCode::Char('?') => {
                 self.status_message = String::from(
-                    "Keys: j/k/↑/↓=nav, l/→/Enter=select, h/←=back, Space=play/pause, n=next, p=prev, a=add, A=add-all, Tab/1-4=switch-tab, /=search, q=quit"
+                    "Keys: j/k/↑/↓=nav, l/→/Enter=select, h/←=back, Space=play/pause, n=next, p=prev, a=add, A=add-all, Tab/1-3=switch-tab, /=search, q=quit"
                 );
             }
             KeyCode::Char('1') => {
                 self.current_tab = Tab::Browser;
             }
             KeyCode::Char('2') => {
-                self.current_tab = Tab::Queue;
+                self.current_tab = Tab::NowPlaying;
             }
             KeyCode::Char('3') => {
-                self.current_tab = Tab::Player;
-            }
-            KeyCode::Char('4') => {
                 self.current_tab = Tab::Playlists;
             }
             KeyCode::Tab => {
@@ -205,10 +211,12 @@ impl App {
                     self.player.resume();
                     self.status_message = String::from("Resumed");
                 } else if let Some(track) = self.queue.current() {
-                    if let Err(e) = self.player.play(track.clone()) {
+                    let track_clone = track.clone();
+                    if let Err(e) = self.player.play(track_clone.clone()) {
                         self.status_message = format!("Error playing: {}", e);
                     } else {
-                        self.status_message = format!("Playing: {}", track.display());
+                        self.status_message = format!("Playing: {}", track_clone.display());
+                        self.start_track(&track_clone);
                     }
                 }
             }
@@ -219,6 +227,7 @@ impl App {
                 self.play_prev();
             }
             KeyCode::Char('s') => {
+                self.scrobble_if_needed();
                 self.player.stop();
                 self.status_message = String::from("Stopped");
             }
@@ -232,10 +241,16 @@ impl App {
     fn handle_tab_keys(&mut self, key: KeyEvent) -> Result<()> {
         match self.current_tab {
             Tab::Browser => self.handle_browser_keys(key)?,
-            Tab::Queue => self.handle_queue_keys(key)?,
-            Tab::Player => self.handle_player_keys(key)?,
+            Tab::NowPlaying => self.handle_now_playing_keys(key)?,
             Tab::Playlists => self.handle_playlist_keys(key)?,
         }
+        Ok(())
+    }
+
+    fn handle_now_playing_keys(&mut self, key: KeyEvent) -> Result<()> {
+        // Allow queue navigation/manipulation and player controls in the combined view
+        self.handle_queue_keys(key)?;
+        self.handle_player_keys(key)?;
         Ok(())
     }
 
@@ -259,8 +274,10 @@ impl App {
                     self.status_message = format!("Added to queue: {}", track.display());
 
                     if self.queue.len() == 1 && !self.player.is_playing() {
-                        if let Err(e) = self.player.play(track) {
+                        if let Err(e) = self.player.play(track.clone()) {
                             self.status_message = format!("Error playing: {}", e);
+                        } else {
+                            self.start_track(&track);
                         }
                     }
                 }
@@ -306,11 +323,16 @@ impl App {
                 }
             }
             KeyCode::Enter => {
+                // Scrobble current track if needed before jumping
+                self.scrobble_if_needed();
+
                 if let Some(track) = self.queue.jump_to(self.queue_selected) {
-                    if let Err(e) = self.player.play(track.clone()) {
+                    let track_clone = track.clone();
+                    if let Err(e) = self.player.play(track_clone.clone()) {
                         self.status_message = format!("Error playing: {}", e);
                     } else {
-                        self.status_message = format!("Playing: {}", track.display());
+                        self.status_message = format!("Playing: {}", track_clone.display());
+                        self.start_track(&track_clone);
                     }
                 }
             }
@@ -511,11 +533,20 @@ impl App {
                 .unwrap_or("")
                 .to_string();
 
-            if let Some(score) = matcher.fuzzy_match(&name, query) {
-                let folder = path
-                    .parent()
-                    .map(|p| p.to_path_buf())
-                    .unwrap_or_else(|| self.browser.current_dir().to_path_buf());
+            let folder = path
+                .parent()
+                .map(|p| p.to_path_buf())
+                .unwrap_or_else(|| self.browser.current_dir().to_path_buf());
+
+            let folder_name = folder.file_name().and_then(|n| n.to_str()).unwrap_or("");
+
+            let searchable_name = if folder_name.is_empty() {
+                name.clone()
+            } else {
+                format!("{} {}", folder_name, name)
+            };
+
+            if let Some(score) = matcher.fuzzy_match(&searchable_name, query) {
                 results.push(SearchResult {
                     path: path.to_path_buf(),
                     folder,
@@ -617,21 +648,31 @@ impl App {
     }
 
     fn play_next(&mut self) {
+        // Scrobble current track if it should be scrobbled
+        self.scrobble_if_needed();
+
         if let Some(track) = self.queue.next() {
-            if let Err(e) = self.player.play(track.clone()) {
+            let track_clone = track.clone();
+            if let Err(e) = self.player.play(track_clone.clone()) {
                 self.status_message = format!("Error playing: {}", e);
             } else {
-                self.status_message = format!("Playing: {}", track.display());
+                self.status_message = format!("Playing: {}", track_clone.display());
+                self.start_track(&track_clone);
             }
         }
     }
 
     fn play_prev(&mut self) {
+        // Scrobble current track if it should be scrobbled
+        self.scrobble_if_needed();
+
         if let Some(track) = self.queue.prev() {
-            if let Err(e) = self.player.play(track.clone()) {
+            let track_clone = track.clone();
+            if let Err(e) = self.player.play(track_clone.clone()) {
                 self.status_message = format!("Error playing: {}", e);
             } else {
-                self.status_message = format!("Playing: {}", track.display());
+                self.status_message = format!("Playing: {}", track_clone.display());
+                self.start_track(&track_clone);
             }
         }
     }
@@ -644,7 +685,7 @@ impl App {
                 Constraint::Min(0),
                 Constraint::Length(3),
             ])
-            .split(f.size());
+            .split(f.area());
 
         self.draw_tabs(f, chunks[0]);
         self.draw_content(f, chunks[1]);
@@ -655,7 +696,7 @@ impl App {
     }
 
     fn draw_tabs(&self, f: &mut Frame, area: Rect) {
-        let tabs = [Tab::Browser, Tab::Queue, Tab::Player, Tab::Playlists];
+        let tabs = [Tab::Browser, Tab::NowPlaying, Tab::Playlists];
 
         let mut tab_text = String::new();
         for (i, tab) in tabs.iter().enumerate() {
@@ -674,8 +715,7 @@ impl App {
     fn draw_content(&mut self, f: &mut Frame, area: Rect) {
         match self.current_tab {
             Tab::Browser => self.draw_browser(f, area),
-            Tab::Queue => self.draw_queue(f, area),
-            Tab::Player => self.draw_player(f, area),
+            Tab::NowPlaying => self.draw_now_playing(f, area),
             Tab::Playlists => self.draw_playlists(f, area),
         }
     }
@@ -706,6 +746,16 @@ impl App {
             .highlight_style(Style::default().add_modifier(Modifier::REVERSED));
 
         f.render_widget(list, area);
+    }
+
+    fn draw_now_playing(&mut self, f: &mut Frame, area: Rect) {
+        let chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+            .split(area);
+
+        self.draw_queue(f, chunks[0]);
+        self.draw_player(f, chunks[1]);
     }
 
     fn draw_queue(&self, f: &mut Frame, area: Rect) {
@@ -969,7 +1019,7 @@ impl App {
     }
 
     fn draw_search_overlay(&self, f: &mut Frame) {
-        let area = centered_rect(60, 50, f.size());
+        let area = centered_rect(60, 50, f.area());
         let items: Vec<ListItem> = self
             .search_results
             .iter()
@@ -1010,6 +1060,55 @@ impl App {
             .block(Block::default().borders(Borders::ALL).title("Status"));
 
         f.render_widget(paragraph, area);
+    }
+
+    fn start_track(&mut self, track: &Path) {
+        *self.track_play_time.lock().unwrap() = Some(SystemTime::now());
+
+        // Update now playing on Last.fm if enabled
+        if self.lastfm_scrobbler.is_enabled() {
+            if let Some(metadata) = self.player.current_metadata() {
+                if let Err(e) = self.lastfm_scrobbler.now_playing(track, &metadata) {
+                    eprintln!("Failed to update now playing on Last.fm: {}", e);
+                }
+            }
+        }
+    }
+
+    fn scrobble_if_needed(&mut self) {
+        if !self.lastfm_scrobbler.is_enabled() {
+            return;
+        }
+
+        let track_start = self.track_play_time.lock().unwrap().take();
+        if let Some(start_time) = track_start {
+            if let Some(track) = self.player.current_track() {
+                if let Some(metadata) = self.player.current_metadata() {
+                    // According to Last.fm scrobbling rules:
+                    // - Track must have been played for at least half its duration, or 4 minutes
+                    let elapsed = SystemTime::now()
+                        .duration_since(start_time)
+                        .unwrap_or(Duration::from_secs(0))
+                        .as_secs();
+
+                    let should_scrobble = if let Some(duration) = metadata.duration_secs {
+                        // Track must be played for at least half its duration or 4 minutes (whichever is lower)
+                        elapsed >= (duration / 2).min(240)
+                    } else {
+                        // If we don't know the duration, scrobble after 4 minutes
+                        elapsed >= 240
+                    };
+
+                    if should_scrobble {
+                        if let Err(e) = self.lastfm_scrobbler.scrobble(&track, &metadata) {
+                            eprintln!("Failed to scrobble track to Last.fm: {}", e);
+                        }
+                    }
+                }
+            }
+        }
+
+        self.lastfm_scrobbler.clear_current_track();
     }
 }
 

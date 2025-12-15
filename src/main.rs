@@ -1,5 +1,7 @@
 mod browser;
 mod config;
+mod lastfm;
+mod lastfm_auth;
 mod metadata;
 mod player;
 mod playlist;
@@ -15,14 +17,18 @@ use ratatui::{backend::CrosstermBackend, Terminal};
 use std::io;
 
 fn main() -> Result<()> {
-    // Load configuration
-    let config = match config::Config::load() {
+    // Load and potentially augment configuration
+    let mut config = match config::Config::load() {
         Ok(cfg) => cfg,
         Err(e) => {
             eprintln!("Error loading configuration: {}", e);
             std::process::exit(1);
         }
     };
+    if let Err(e) = lastfm_auth::ensure_lastfm_session_key(&mut config) {
+        eprintln!("Warning: {}", e);
+        eprintln!("Last.fm scrobbling will remain disabled until the session key is configured.");
+    }
 
     // Setup terminal
     enable_raw_mode()?;
