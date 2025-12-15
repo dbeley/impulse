@@ -15,6 +15,15 @@ use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
 use symphonia_adapter_libopus::OpusDecoder;
 
+// MUTEX LOCKING ORDER:
+// To prevent deadlocks, when multiple mutexes need to be locked, they should be acquired
+// in the following order:
+// 1. paused_elapsed
+// 2. playback_start_time
+// 3. sink
+// 4. current_track
+// 5. current_metadata
+
 #[derive(Clone)]
 pub struct Player {
     sink: Arc<Mutex<Option<Sink>>>,
@@ -133,23 +142,18 @@ impl Player {
     }
 
     pub fn pause(&self) {
-        // Check if paused and get elapsed time in a way that maintains consistent lock order
-        let is_currently_paused = self.sink
-            .lock()
-            .unwrap()
-            .as_ref()
-            .map(|s| s.is_paused())
-            .unwrap_or(false);
+        // Check if already paused
+        if self.is_paused() {
+            return;
+        }
         
-        if !is_currently_paused {
-            // Get elapsed time before we pause
-            let elapsed = self.get_elapsed_duration();
-            
-            // Now pause the sink and store elapsed time
-            if let Some(sink) = self.sink.lock().unwrap().as_ref() {
-                *self.paused_elapsed.lock().unwrap() = elapsed;
-                sink.pause();
-            }
+        // Get elapsed time before we pause
+        let elapsed = self.get_elapsed_duration();
+        
+        // Now pause the sink and store elapsed time
+        if let Some(sink) = self.sink.lock().unwrap().as_ref() {
+            *self.paused_elapsed.lock().unwrap() = elapsed;
+            sink.pause();
         }
     }
 
