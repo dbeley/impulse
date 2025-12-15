@@ -1,0 +1,75 @@
+# Pre-commit configuration for Rust using prek
+# Install prek: https://github.com/pinage404/prek
+# Run: prek run (or prek run --all to check all files)
+
+repos:
+  - repo: local
+    hooks:
+      # Rust formatting check
+      - id: cargo-fmt
+        name: cargo fmt
+        description: Check Rust code formatting
+        entry: cargo fmt
+        args: ["--", "--check"]
+        language: system
+        files: \.rs$
+        pass_filenames: false
+
+      # Rust linting
+      - id: cargo-clippy
+        name: cargo clippy
+        description: Lint Rust code with clippy
+        entry: cargo clippy
+        args: ["--all-targets", "--all-features", "--", "-D", "warnings"]
+        language: system
+        files: \.rs$
+        pass_filenames: false
+
+      # Check for common mistakes
+      - id: cargo-check
+        name: cargo check
+        description: Check Rust code compiles
+        entry: cargo check
+        args: ["--all-targets", "--all-features"]
+        language: system
+        files: \.rs$
+        pass_filenames: false
+
+      # Check for security vulnerabilities (optional, requires cargo-audit)
+      # Uncomment if you have cargo-audit installed
+      # - id: cargo-audit
+      #   name: cargo audit
+      #   description: Check for security vulnerabilities
+      #   entry: cargo audit
+      #   language: system
+      #   files: Cargo\.(toml|lock)$
+      #   pass_filenames: false
+
+  # General file checks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+        name: trim trailing whitespace
+        description: Remove trailing whitespace
+
+      - id: end-of-file-fixer
+        name: fix end of files
+        description: Ensure files end with a newline
+
+      - id: check-yaml
+        name: check yaml
+        description: Check YAML files are valid
+
+      - id: check-toml
+        name: check toml
+        description: Check TOML files are valid
+
+      - id: check-added-large-files
+        name: check for large files
+        description: Prevent committing large files
+        args: ['--maxkb=500']
+
+      - id: check-merge-conflict
+        name: check for merge conflicts
+        description: Check for merge conflict markers

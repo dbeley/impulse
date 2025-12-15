@@ -1,0 +1,23 @@
+# Rust
+target/
+**/*.rs.bk
+*.pdb
+
+# Nix
+result
+result-*
+.direnv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Config (user-specific)
+config.toml
