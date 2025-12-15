@@ -22,37 +22,28 @@
           extensions = [ "rust-src" "rust-analyzer" ];
         };
 
-        # Build-time dependencies
         nativeBuildInputs = with pkgs; [
           rustToolchain
           pkg-config
           cmake
         ];
 
-        # Runtime dependencies
         buildInputs = with pkgs; [
           alsa-lib
           libopus
         ];
 
-        # Development tools
         devInputs = with pkgs; [
-          # Pre-commit tools
           prek
-
-          # Rust development tools
           cargo-watch
           cargo-edit
           cargo-outdated
-
-          # Formatters and linters
           rustfmt
           clippy
         ];
 
       in
       {
-        # Package definition
         packages.default = pkgs.rustPlatform.buildRustPackage {
           pname = "impulse";
           version = "0.1.0";
@@ -75,7 +66,6 @@
           };
         };
 
-        # Development shell
         devShells.default = pkgs.mkShell {
           buildInputs = nativeBuildInputs ++ buildInputs ++ devInputs;
 
@@ -89,22 +79,18 @@
             echo "  cargo fmt      - Format code"
             echo "  prek run       - Run pre-commit hooks"
             echo ""
-            echo "Pre-commit hooks configured with prek"
           '';
 
-          # Set environment variables for ALSA
           ALSA_LIB_DIR = "${pkgs.alsa-lib}/lib";
           PKG_CONFIG_PATH = "${pkgs.alsa-lib}/lib/pkgconfig";
         };
 
-        # App definition for easy running with `nix run`
         apps.default = {
           type = "app";
           program = "${self.packages.${system}.default}/bin/impulse";
         };
       }
     ) // {
-      # NixOS module for system-wide installation
       nixosModules.default = { config, lib, pkgs, ... }:
         with lib;
         let
