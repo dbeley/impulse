@@ -177,7 +177,7 @@ impl App {
             }
             KeyCode::Char('?') => {
                 self.status_message = String::from(
-                    "Keys: j/k/↑/↓=nav, l/→/Enter=select, h/←=back, Space=play/pause, n=next, p=prev, a=add, A=add-all, Tab/1-3=switch-tab, /=search, q=quit"
+                    "Keys: j/k/↑/↓=nav, l/→/Enter=select, h/←=back, Space/p=play/pause, >=next, <=prev, a=add, A=add-all, Tab/1-3=switch-tab, /=search, q=quit"
                 );
             }
             KeyCode::Char('1') => {
@@ -203,7 +203,7 @@ impl App {
                 self.input_mode = InputMode::Command;
                 self.command_input.clear();
             }
-            KeyCode::Char(' ') => {
+            KeyCode::Char(' ') | KeyCode::Char('p') => {
                 if self.player.is_playing() {
                     self.player.pause();
                     self.status_message = String::from("Paused");
@@ -220,10 +220,10 @@ impl App {
                     }
                 }
             }
-            KeyCode::Char('n') | KeyCode::Char('>') => {
+            KeyCode::Char('>') => {
                 self.play_next();
             }
-            KeyCode::Char('P') | KeyCode::Char('<') => {
+            KeyCode::Char('<') => {
                 self.play_prev();
             }
             KeyCode::Char('s') => {
