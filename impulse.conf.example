@@ -1,5 +1,5 @@
 # Example configuration file for Impulse music player
-# Place this file at ~/.config/impulse/config.toml
+# Place this file at ~/.config/impulse/impulse.conf
 
 # Directory where your music is stored (default: ~/Music)
 # music_dir = "/home/user/Music"

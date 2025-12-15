@@ -61,7 +61,7 @@ Add to your NixOS configuration:
 impulse
 ```
 
-On first run, a default configuration file will be created at `~/.config/impulse/config.toml`.
+On first run, a default configuration file will be created at `~/.config/impulse/impulse.conf`.
 Playlists (including saved queues) default to `~/.local/share/impulse/playlists`.
 
 ## Keybindings
@@ -119,7 +119,7 @@ Playlists (including saved queues) default to `~/.local/share/impulse/playlists`
 
 ## Configuration
 
-Edit `~/.config/impulse/config.toml`:
+Edit `~/.config/impulse/impulse.conf`:
 
 ```toml
 music_dir = "/home/user/Music"
@@ -127,7 +127,7 @@ playlist_dir = "/home/user/.local/share/impulse/playlists"
 volume = 0.5
 ```
 
-See `config.toml.example` for a complete example configuration.
+See `impulse.conf.example` for a complete example configuration.
 
 ### Last.fm Scrobbling (Optional)
 
@@ -138,7 +138,7 @@ Impulse supports scrobbling your listening history to Last.fm. To enable this fe
    - You'll receive an API key and API secret
 
 2. **Configure Impulse**:
-   Add the following to your `~/.config/impulse/config.toml`:
+   Add the following to your `~/.config/impulse/impulse.conf`:
    ```toml
    [lastfm]
    enabled = true

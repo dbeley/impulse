@@ -20,4 +20,4 @@ result-*
 Thumbs.db
 
 # Config (user-specific)
-config.toml
+impulse.conf

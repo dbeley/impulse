@@ -111,6 +111,6 @@ impl Config {
         dirs::config_dir()
             .unwrap_or_else(|| PathBuf::from("."))
             .join("impulse")
-            .join("config.toml")
+            .join("impulse.conf")
     }
 }
