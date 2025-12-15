@@ -6,6 +6,7 @@ use std::io::BufReader;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, SystemTime};
 use symphonia::core::audio::SampleBuffer;
 use symphonia::core::codecs::{CodecRegistry, DecoderOptions};
 use symphonia::core::formats::FormatOptions;
@@ -21,6 +22,8 @@ pub struct Player {
     stream_handle: Arc<OutputStreamHandle>,
     current_track: Arc<Mutex<Option<PathBuf>>>,
     current_metadata: Arc<Mutex<Option<TrackMetadata>>>,
+    playback_start_time: Arc<Mutex<Option<SystemTime>>>,
+    paused_elapsed: Arc<Mutex<Duration>>,
 }
 
 impl Player {
@@ -34,6 +37,8 @@ impl Player {
             stream_handle: Arc::new(stream_handle),
             current_track: Arc::new(Mutex::new(None)),
             current_metadata: Arc::new(Mutex::new(None)),
+            playback_start_time: Arc::new(Mutex::new(None)),
+            paused_elapsed: Arc::new(Mutex::new(Duration::from_secs(0))),
         })
     }
 
@@ -80,6 +85,8 @@ impl Player {
         *self.sink.lock().unwrap() = Some(sink);
         *self.current_track.lock().unwrap() = Some(path);
         *self.current_metadata.lock().unwrap() = metadata;
+        *self.playback_start_time.lock().unwrap() = Some(SystemTime::now());
+        *self.paused_elapsed.lock().unwrap() = Duration::from_secs(0);
 
         Ok(())
     }
@@ -127,13 +134,22 @@ impl Player {
 
     pub fn pause(&self) {
         if let Some(sink) = self.sink.lock().unwrap().as_ref() {
-            sink.pause();
+            if !sink.is_paused() {
+                // Store the elapsed time when pausing
+                let elapsed = self.get_elapsed_duration();
+                *self.paused_elapsed.lock().unwrap() = elapsed;
+                sink.pause();
+            }
         }
     }
 
     pub fn resume(&self) {
         if let Some(sink) = self.sink.lock().unwrap().as_ref() {
-            sink.play();
+            if sink.is_paused() {
+                // Resume from the stored position
+                *self.playback_start_time.lock().unwrap() = Some(SystemTime::now());
+                sink.play();
+            }
         }
     }
 
@@ -144,6 +160,8 @@ impl Player {
         *self.sink.lock().unwrap() = None;
         *self.current_track.lock().unwrap() = None;
         *self.current_metadata.lock().unwrap() = None;
+        *self.playback_start_time.lock().unwrap() = None;
+        *self.paused_elapsed.lock().unwrap() = Duration::from_secs(0);
     }
 
     pub fn is_playing(&self) -> bool {
@@ -179,6 +197,37 @@ impl Player {
 
     pub fn current_metadata(&self) -> Option<TrackMetadata> {
         self.current_metadata.lock().unwrap().clone()
+    }
+
+    fn get_elapsed_duration(&self) -> Duration {
+        if self.is_paused() {
+            // When paused, return the stored elapsed time
+            *self.paused_elapsed.lock().unwrap()
+        } else if let Some(start_time) = *self.playback_start_time.lock().unwrap() {
+            // When playing, add the time since resume to the paused elapsed time
+            let current_elapsed = SystemTime::now()
+                .duration_since(start_time)
+                .unwrap_or(Duration::from_secs(0));
+            *self.paused_elapsed.lock().unwrap() + current_elapsed
+        } else {
+            Duration::from_secs(0)
+        }
+    }
+
+    pub fn get_position(&self) -> Duration {
+        self.get_elapsed_duration()
+    }
+
+    pub fn get_progress(&self) -> Option<f64> {
+        if let Some(metadata) = self.current_metadata() {
+            if let Some(duration_secs) = metadata.duration_secs {
+                let position_secs = self.get_position().as_secs();
+                if duration_secs > 0 {
+                    return Some((position_secs as f64 / duration_secs as f64).min(1.0));
+                }
+            }
+        }
+        None
     }
 
     pub fn set_volume(&self, volume: f32) {

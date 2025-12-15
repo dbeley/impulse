@@ -13,7 +13,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, Paragraph},
+    widgets::{Block, Borders, Gauge, List, ListItem, Paragraph},
     Frame, Terminal,
 };
 use ratatui_image::{picker::Picker, protocol::StatefulProtocol};
@@ -678,13 +678,27 @@ impl App {
     }
 
     fn draw(&mut self, f: &mut Frame) {
-        let chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
+        // Determine if we should show the progress bar
+        let show_progress = !self.queue.is_empty() && self.player.current_track().is_some();
+
+        let constraints = if show_progress {
+            vec![
                 Constraint::Length(3),
                 Constraint::Min(0),
                 Constraint::Length(3),
-            ])
+                Constraint::Length(3),
+            ]
+        } else {
+            vec![
+                Constraint::Length(3),
+                Constraint::Min(0),
+                Constraint::Length(3),
+            ]
+        };
+
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints(constraints)
             .split(f.area());
 
         self.draw_tabs(f, chunks[0]);
@@ -692,7 +706,13 @@ impl App {
         if matches!(self.input_mode, InputMode::SearchResults) {
             self.draw_search_overlay(f);
         }
-        self.draw_status(f, chunks[2]);
+        
+        if show_progress {
+            self.draw_progress_bar(f, chunks[2]);
+            self.draw_status(f, chunks[3]);
+        } else {
+            self.draw_status(f, chunks[2]);
+        }
     }
 
     fn draw_tabs(&self, f: &mut Frame, area: Rect) {
@@ -1042,6 +1062,44 @@ impl App {
         );
 
         f.render_widget(list, area);
+    }
+
+    fn draw_progress_bar(&self, f: &mut Frame, area: Rect) {
+        // Get playback status icon
+        let status_icon = if self.player.is_playing() {
+            "▶"
+        } else if self.player.is_paused() {
+            "⏸"
+        } else {
+            "⏹"
+        };
+
+        let position = self.player.get_position();
+        let progress = self.player.get_progress().unwrap_or(0.0);
+        
+        let position_secs = position.as_secs();
+        let position_str = format!("{}:{:02}", position_secs / 60, position_secs % 60);
+
+        let duration_str = if let Some(metadata) = self.player.current_metadata() {
+            metadata.format_duration()
+        } else {
+            "?:??".to_string()
+        };
+
+        let label = format!("{} {} / {}", status_icon, position_str, duration_str);
+
+        let gauge = Gauge::default()
+            .block(Block::default().borders(Borders::ALL).title("Progress"))
+            .gauge_style(
+                Style::default()
+                    .fg(Color::Green)
+                    .bg(Color::Black)
+                    .add_modifier(Modifier::BOLD),
+            )
+            .label(label)
+            .ratio(progress);
+
+        f.render_widget(gauge, area);
     }
 
     fn draw_status(&self, f: &mut Frame, area: Rect) {
