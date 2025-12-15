@@ -230,20 +230,3 @@ prek run --all
 # Install git hooks (optional)
 prek install
 ```
-
-The pre-commit configuration includes:
-- `cargo fmt` - Code formatting check
-- `cargo clippy` - Linting
-- `cargo check` - Compilation check
-- File hygiene checks (trailing whitespace, YAML/TOML validation, etc.)
-
-## Architecture
-
-Impulse is built with a modular architecture:
-
-- **Browser**: File system navigation with directory and audio file detection
-- **Queue**: Track queue management with add, remove, and navigation
-- **Player**: Audio playback using the rodio library
-- **Playlist Manager**: M3U playlist loading and management
-- **Config**: TOML-based configuration file handling
-- **UI**: Terminal UI built with ratatui and crossterm
