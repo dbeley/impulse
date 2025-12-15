@@ -3,6 +3,9 @@ target/
 **/*.rs.bk
 *.pdb
 
+# Cargo config (user-specific, use .cargo-config.toml.example instead)
+.cargo/config.toml
+
 # Nix
 result
 result-*

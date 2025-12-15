@@ -1,0 +1,15 @@
+# Cargo build configuration for faster compile times
+# Copy this file to .cargo/config.toml to enable optimizations
+# Note: .cargo/config.toml should NOT be committed (it's in .gitignore)
+
+[target.x86_64-unknown-linux-gnu]
+linker = "clang"
+rustflags = ["-C", "link-arg=-fuse-ld=mold"]
+
+[target.x86_64-unknown-linux-musl]
+linker = "clang"
+rustflags = ["-C", "link-arg=-fuse-ld=mold"]
+
+[target.aarch64-unknown-linux-gnu]
+linker = "clang"
+rustflags = ["-C", "link-arg=-fuse-ld=mold"]

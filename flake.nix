@@ -39,6 +39,9 @@
           cargo-watch
           cargo-edit
           cargo-outdated
+          # Build optimization tools
+          mold     # Fast linker (2-5x faster than lld)
+          clang    # Required for mold
         ];
 
       in
@@ -62,10 +65,13 @@
         };
 
         devShells.default = pkgs.mkShell {
-          inputsFrom = [ self.packages.${system}.default ];
-          buildInputs = devInputs;
+          nativeBuildInputs = devInputs ++ nativeBuildInputs;
+          buildInputs = buildInputs;
 
           shellHook = ''
+            # Ensure rustToolchain takes precedence over rustPlatform tools
+            export PATH="${rustToolchain}/bin:$PATH"
+
             echo "Impulse development environment"
             echo "Available commands:"
             echo "  cargo build    - Build the project"

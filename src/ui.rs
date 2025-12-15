@@ -13,7 +13,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
+    widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph},
     Frame, Terminal,
 };
 use ratatui_image::{picker::Picker, protocol::StatefulProtocol};
@@ -106,7 +106,7 @@ impl App {
         let playlist_manager = PlaylistManager::new(config.playlist_dir.clone());
 
         // Initialize image picker for album art display
-        let mut picker = Picker::from_termios().unwrap_or_else(|_| Picker::new((8, 12)));
+        let mut picker = Picker::new((8, 12));
         picker.guess_protocol();
 
         // Initialize Last.fm scrobbler
@@ -1074,6 +1074,10 @@ impl App {
 
     fn draw_search_overlay(&mut self, f: &mut Frame) {
         let area = centered_rect(60, 50, f.area());
+
+        // Clear the background to ensure the overlay is visible
+        f.render_widget(Clear, area);
+
         let items: Vec<ListItem> = self
             .search_results
             .iter()
