@@ -55,6 +55,33 @@ impl LastfmScrobbler {
     }
 
     #[cfg(feature = "lastfm")]
+    fn extract_track_info<'a>(
+        path: &'a Path,
+        metadata: &'a TrackMetadata,
+    ) -> (&'a str, String, &'a str) {
+        let artist = metadata
+            .artist
+            .as_deref()
+            .or(metadata.album_artist.as_deref())
+            .unwrap_or("Unknown Artist");
+
+        let title = metadata
+            .title
+            .as_deref()
+            .map(|s| s.to_string())
+            .or_else(|| {
+                path.file_stem()
+                    .and_then(|s| s.to_str())
+                    .map(|s| s.to_string())
+            })
+            .unwrap_or_else(|| "Unknown Track".to_string());
+
+        let album = metadata.album.as_deref().unwrap_or("");
+
+        (artist, title, album)
+    }
+
+    #[cfg(feature = "lastfm")]
     pub fn now_playing(&self, path: &Path, metadata: &TrackMetadata) -> Result<()> {
         if !self.enabled {
             return Ok(());
@@ -62,25 +89,9 @@ impl LastfmScrobbler {
 
         let scrobbler_guard = self.scrobbler.lock().unwrap();
         if let Some(scrobbler) = scrobbler_guard.as_ref() {
-            let artist = metadata
-                .artist
-                .as_deref()
-                .or(metadata.album_artist.as_deref())
-                .unwrap_or("Unknown Artist");
+            let (artist, title, album) = Self::extract_track_info(path, metadata);
 
-            let title = metadata
-                .title
-                .as_deref()
-                .or_else(|| {
-                    path.file_name()
-                        .and_then(|n| n.to_str())
-                        .map(|s| s.trim_end_matches(|c| c != '.'))
-                })
-                .unwrap_or("Unknown Track");
-
-            let album = metadata.album.as_deref().unwrap_or("");
-
-            let scrobble = Scrobble::new(artist, title, album);
+            let scrobble = Scrobble::new(artist, &title, album);
 
             // Update now playing on Last.fm
             scrobbler
@@ -114,25 +125,9 @@ impl LastfmScrobbler {
             let timestamp = self.current_track_start.lock().unwrap().take();
 
             if let Some(ts) = timestamp {
-                let artist = metadata
-                    .artist
-                    .as_deref()
-                    .or(metadata.album_artist.as_deref())
-                    .unwrap_or("Unknown Artist");
+                let (artist, title, album) = Self::extract_track_info(path, metadata);
 
-                let title = metadata
-                    .title
-                    .as_deref()
-                    .or_else(|| {
-                        path.file_name()
-                            .and_then(|n| n.to_str())
-                            .map(|s| s.trim_end_matches(|c| c != '.'))
-                    })
-                    .unwrap_or("Unknown Track");
-
-                let album = metadata.album.as_deref().unwrap_or("");
-
-                let mut scrobble = Scrobble::new(artist, title, album);
+                let mut scrobble = Scrobble::new(artist, &title, album);
                 scrobble.with_timestamp(ts);
 
                 // Submit the scrobble to Last.fm

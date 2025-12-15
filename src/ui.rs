@@ -17,7 +17,7 @@ use ratatui::{
     Frame, Terminal,
 };
 use ratatui_image::{picker::Picker, protocol::StatefulProtocol};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 use walkdir::WalkDir;
@@ -1045,7 +1045,7 @@ impl App {
         f.render_widget(paragraph, area);
     }
 
-    fn start_track(&mut self, track: &PathBuf) {
+    fn start_track(&mut self, track: &Path) {
         *self.track_play_time.lock().unwrap() = Some(SystemTime::now());
         
         // Update now playing on Last.fm if enabled
