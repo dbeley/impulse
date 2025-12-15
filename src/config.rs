@@ -11,6 +11,16 @@ pub struct Config {
     pub playlist_dir: PathBuf,
     #[serde(default = "default_volume")]
     pub volume: f32,
+    #[serde(default)]
+    pub lastfm: Option<LastfmConfig>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct LastfmConfig {
+    pub enabled: bool,
+    pub api_key: String,
+    pub api_secret: String,
+    pub session_key: String,
 }
 
 fn default_music_dir() -> PathBuf {
@@ -39,6 +49,7 @@ impl Default for Config {
             music_dir: default_music_dir(),
             playlist_dir: default_playlist_dir(),
             volume: default_volume(),
+            lastfm: None,
         }
     }
 }

@@ -1,5 +1,6 @@
 use crate::browser::{is_audio_file, Browser};
 use crate::config::Config;
+use crate::lastfm::LastfmScrobbler;
 use crate::player::Player;
 use crate::playlist::PlaylistManager;
 use crate::queue::Queue;
@@ -92,6 +93,8 @@ pub struct App {
     status_message: String,
     image_picker: Arc<Mutex<Picker>>,
     album_art: Arc<Mutex<Option<Box<dyn StatefulProtocol>>>>,
+    lastfm_scrobbler: LastfmScrobbler,
+    track_play_time: Arc<Mutex<Option<SystemTime>>>,
 }
 
 impl App {
@@ -106,6 +109,9 @@ impl App {
         // Initialize image picker for album art display
         let mut picker = Picker::from_termios().unwrap_or_else(|_| Picker::new((8, 12)));
         picker.guess_protocol();
+
+        // Initialize Last.fm scrobbler
+        let lastfm_scrobbler = LastfmScrobbler::new(config.lastfm.as_ref())?;
 
         Ok(Self {
             player,
@@ -126,6 +132,8 @@ impl App {
             status_message: String::from("Welcome to Impulse! Press '?' for help"),
             image_picker: Arc::new(Mutex::new(picker)),
             album_art: Arc::new(Mutex::new(None)),
+            lastfm_scrobbler,
+            track_play_time: Arc::new(Mutex::new(None)),
         })
     }
 
@@ -141,7 +149,12 @@ impl App {
 
             // Check if current track finished
             if self.player.is_finished() && !self.queue.is_empty() {
+                // Scrobble the finished track if enough time has passed
+                self.scrobble_if_needed();
                 self.play_next();
+            } else if self.player.is_finished() {
+                // Track finished but queue is empty, scrobble it
+                self.scrobble_if_needed();
             }
 
             if self.should_quit {
@@ -205,10 +218,12 @@ impl App {
                     self.player.resume();
                     self.status_message = String::from("Resumed");
                 } else if let Some(track) = self.queue.current() {
-                    if let Err(e) = self.player.play(track.clone()) {
+                    let track_clone = track.clone();
+                    if let Err(e) = self.player.play(track_clone.clone()) {
                         self.status_message = format!("Error playing: {}", e);
                     } else {
-                        self.status_message = format!("Playing: {}", track.display());
+                        self.status_message = format!("Playing: {}", track_clone.display());
+                        self.start_track(&track_clone);
                     }
                 }
             }
@@ -219,6 +234,7 @@ impl App {
                 self.play_prev();
             }
             KeyCode::Char('s') => {
+                self.scrobble_if_needed();
                 self.player.stop();
                 self.status_message = String::from("Stopped");
             }
@@ -259,8 +275,10 @@ impl App {
                     self.status_message = format!("Added to queue: {}", track.display());
 
                     if self.queue.len() == 1 && !self.player.is_playing() {
-                        if let Err(e) = self.player.play(track) {
+                        if let Err(e) = self.player.play(track.clone()) {
                             self.status_message = format!("Error playing: {}", e);
+                        } else {
+                            self.start_track(&track);
                         }
                     }
                 }
@@ -306,11 +324,16 @@ impl App {
                 }
             }
             KeyCode::Enter => {
+                // Scrobble current track if needed before jumping
+                self.scrobble_if_needed();
+
                 if let Some(track) = self.queue.jump_to(self.queue_selected) {
-                    if let Err(e) = self.player.play(track.clone()) {
+                    let track_clone = track.clone();
+                    if let Err(e) = self.player.play(track_clone.clone()) {
                         self.status_message = format!("Error playing: {}", e);
                     } else {
-                        self.status_message = format!("Playing: {}", track.display());
+                        self.status_message = format!("Playing: {}", track_clone.display());
+                        self.start_track(&track_clone);
                     }
                 }
             }
@@ -617,21 +640,31 @@ impl App {
     }
 
     fn play_next(&mut self) {
+        // Scrobble current track if it should be scrobbled
+        self.scrobble_if_needed();
+
         if let Some(track) = self.queue.next() {
-            if let Err(e) = self.player.play(track.clone()) {
+            let track_clone = track.clone();
+            if let Err(e) = self.player.play(track_clone.clone()) {
                 self.status_message = format!("Error playing: {}", e);
             } else {
-                self.status_message = format!("Playing: {}", track.display());
+                self.status_message = format!("Playing: {}", track_clone.display());
+                self.start_track(&track_clone);
             }
         }
     }
 
     fn play_prev(&mut self) {
+        // Scrobble current track if it should be scrobbled
+        self.scrobble_if_needed();
+
         if let Some(track) = self.queue.prev() {
-            if let Err(e) = self.player.play(track.clone()) {
+            let track_clone = track.clone();
+            if let Err(e) = self.player.play(track_clone.clone()) {
                 self.status_message = format!("Error playing: {}", e);
             } else {
-                self.status_message = format!("Playing: {}", track.display());
+                self.status_message = format!("Playing: {}", track_clone.display());
+                self.start_track(&track_clone);
             }
         }
     }
@@ -1010,6 +1043,55 @@ impl App {
             .block(Block::default().borders(Borders::ALL).title("Status"));
 
         f.render_widget(paragraph, area);
+    }
+
+    fn start_track(&mut self, track: &PathBuf) {
+        *self.track_play_time.lock().unwrap() = Some(SystemTime::now());
+        
+        // Update now playing on Last.fm if enabled
+        if self.lastfm_scrobbler.is_enabled() {
+            if let Some(metadata) = self.player.current_metadata() {
+                if let Err(e) = self.lastfm_scrobbler.now_playing(track, &metadata) {
+                    eprintln!("Failed to update now playing on Last.fm: {}", e);
+                }
+            }
+        }
+    }
+
+    fn scrobble_if_needed(&mut self) {
+        if !self.lastfm_scrobbler.is_enabled() {
+            return;
+        }
+
+        let track_start = self.track_play_time.lock().unwrap().take();
+        if let Some(start_time) = track_start {
+            if let Some(track) = self.player.current_track() {
+                if let Some(metadata) = self.player.current_metadata() {
+                    // According to Last.fm scrobbling rules:
+                    // - Track must have been played for at least half its duration, or 4 minutes
+                    let elapsed = SystemTime::now()
+                        .duration_since(start_time)
+                        .unwrap_or(Duration::from_secs(0))
+                        .as_secs();
+                    
+                    let should_scrobble = if let Some(duration) = metadata.duration_secs {
+                        // Track must be played for at least half its duration or 4 minutes (whichever is lower)
+                        elapsed >= (duration / 2).min(240)
+                    } else {
+                        // If we don't know the duration, scrobble after 4 minutes
+                        elapsed >= 240
+                    };
+
+                    if should_scrobble {
+                        if let Err(e) = self.lastfm_scrobbler.scrobble(&track, &metadata) {
+                            eprintln!("Failed to scrobble track to Last.fm: {}", e);
+                        }
+                    }
+                }
+            }
+        }
+
+        self.lastfm_scrobbler.clear_current_track();
     }
 }
 

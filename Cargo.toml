@@ -32,6 +32,13 @@ fuzzy-matcher = "0.3"
 # Error handling
 anyhow = "1.0"
 
+# Last.fm scrobbling (optional)
+rustfm-scrobble = { version = "1.1", optional = true }
+
+[features]
+default = []
+lastfm = ["rustfm-scrobble"]
+
 [profile.release]
 opt-level = 3
 lto = true

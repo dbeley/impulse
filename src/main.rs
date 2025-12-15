@@ -1,5 +1,6 @@
 mod browser;
 mod config;
+mod lastfm;
 mod metadata;
 mod player;
 mod playlist;
