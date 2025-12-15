@@ -1,60 +1,41 @@
 use crate::config::LastfmConfig;
 use crate::metadata::TrackMetadata;
-use anyhow::Result;
+use anyhow::{Context, Result};
+use rustfm_scrobble::{Scrobble, Scrobbler};
 use std::path::Path;
-
-#[cfg(feature = "lastfm")]
-use anyhow::Context;
-#[cfg(feature = "lastfm")]
 use std::sync::{Arc, Mutex};
-#[cfg(feature = "lastfm")]
 use std::time::{SystemTime, UNIX_EPOCH};
 
-#[cfg(feature = "lastfm")]
-use rustfm_scrobble::{Scrobble, Scrobbler};
-
 pub struct LastfmScrobbler {
-    #[cfg(feature = "lastfm")]
     scrobbler: Arc<Mutex<Option<Scrobbler>>>,
     enabled: bool,
-    #[cfg(feature = "lastfm")]
     current_track_start: Arc<Mutex<Option<u64>>>,
 }
 
 impl LastfmScrobbler {
-    pub fn new(_config: Option<&LastfmConfig>) -> Result<Self> {
-        #[cfg(feature = "lastfm")]
-        {
-            if let Some(cfg) = _config {
-                if cfg.enabled {
-                    let mut scrobbler =
-                        Scrobbler::new(&cfg.api_key, &cfg.api_secret);
-                    scrobbler.authenticate_with_session_key(&cfg.session_key);
-                    return Ok(Self {
-                        scrobbler: Arc::new(Mutex::new(Some(scrobbler))),
-                        enabled: true,
-                        current_track_start: Arc::new(Mutex::new(None)),
-                    });
-                }
+    pub fn new(config: Option<&LastfmConfig>) -> Result<Self> {
+        if let Some(cfg) = config {
+            if cfg.enabled {
+                let mut scrobbler = Scrobbler::new(&cfg.api_key, &cfg.api_secret);
+                scrobbler.authenticate_with_session_key(&cfg.session_key);
+                return Ok(Self {
+                    scrobbler: Arc::new(Mutex::new(Some(scrobbler))),
+                    enabled: true,
+                    current_track_start: Arc::new(Mutex::new(None)),
+                });
             }
-            Ok(Self {
-                scrobbler: Arc::new(Mutex::new(None)),
-                enabled: false,
-                current_track_start: Arc::new(Mutex::new(None)),
-            })
         }
-
-        #[cfg(not(feature = "lastfm"))]
-        {
-            Ok(Self { enabled: false })
-        }
+        Ok(Self {
+            scrobbler: Arc::new(Mutex::new(None)),
+            enabled: false,
+            current_track_start: Arc::new(Mutex::new(None)),
+        })
     }
 
     pub fn is_enabled(&self) -> bool {
         self.enabled
     }
 
-    #[cfg(feature = "lastfm")]
     fn extract_track_info<'a>(
         path: &'a Path,
         metadata: &'a TrackMetadata,
@@ -81,7 +62,6 @@ impl LastfmScrobbler {
         (artist, title, album)
     }
 
-    #[cfg(feature = "lastfm")]
     pub fn now_playing(&self, path: &Path, metadata: &TrackMetadata) -> Result<()> {
         if !self.enabled {
             return Ok(());
@@ -109,12 +89,6 @@ impl LastfmScrobbler {
         Ok(())
     }
 
-    #[cfg(not(feature = "lastfm"))]
-    pub fn now_playing(&self, _path: &Path, _metadata: &TrackMetadata) -> Result<()> {
-        Ok(())
-    }
-
-    #[cfg(feature = "lastfm")]
     pub fn scrobble(&self, path: &Path, metadata: &TrackMetadata) -> Result<()> {
         if !self.enabled {
             return Ok(());
@@ -140,15 +114,7 @@ impl LastfmScrobbler {
         Ok(())
     }
 
-    #[cfg(not(feature = "lastfm"))]
-    pub fn scrobble(&self, _path: &Path, _metadata: &TrackMetadata) -> Result<()> {
-        Ok(())
-    }
-
     pub fn clear_current_track(&self) {
-        #[cfg(feature = "lastfm")]
-        {
-            *self.current_track_start.lock().unwrap() = None;
-        }
+        *self.current_track_start.lock().unwrap() = None;
     }
 }

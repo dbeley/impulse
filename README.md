@@ -13,7 +13,7 @@ Minimalist music player with minimal dependencies, focusing on speed and a keybo
 - ⚙️  **Configuration file** - Customize settings via TOML config
 - 🚀 **Minimal dependencies** - Fast and lightweight
 - 🎶 **Multiple format support** - MP3, FLAC, OGG Vorbis, Opus, WAV, M4A, AAC, ALAC
-- 🎧 **Last.fm scrobbling** - Optional support for scrobbling to Last.fm (requires `lastfm` feature)
+- 🎧 **Last.fm scrobbling** - Optional support for scrobbling to Last.fm
 
 ## Installation
 
@@ -24,16 +24,6 @@ cargo build --release
 ```
 
 The binary will be available at `target/release/impulse`.
-
-#### Optional: Enable Last.fm Scrobbling
-
-To build with Last.fm scrobbling support, use the `lastfm` feature:
-
-```bash
-cargo build --release --features lastfm
-```
-
-See the [Last.fm Configuration](#lastfm-scrobbling-optional) section below for setup instructions.
 
 ### Using Nix Flakes
 
@@ -139,23 +129,18 @@ See `config.toml.example` for a complete example configuration.
 
 ### Last.fm Scrobbling (Optional)
 
-Impulse supports scrobbling your listening history to Last.fm. This feature is optional and requires:
+Impulse supports scrobbling your listening history to Last.fm. To enable this feature:
 
-1. **Building with the `lastfm` feature**:
-   ```bash
-   cargo build --release --features lastfm
-   ```
-
-2. **Obtaining Last.fm API credentials**:
+1. **Obtain Last.fm API credentials**:
    - Create an API account at https://www.last.fm/api/account/create
    - You'll receive an API key and API secret
 
-3. **Generating a session key**:
+2. **Generate a session key**:
    - You need to authenticate once to get a session key
    - You can use online tools or the Last.fm authentication flow
    - See https://www.last.fm/api/authentication for details
 
-4. **Configuring Impulse**:
+3. **Configure Impulse**:
    Add the following to your `~/.config/impulse/config.toml`:
    ```toml
    [lastfm]
@@ -169,8 +154,6 @@ Once configured, Impulse will automatically:
 - Update "Now Playing" status when you start a track
 - Scrobble tracks after you've listened to at least half the duration (or 4 minutes, whichever is lower)
 - Follow Last.fm's scrobbling guidelines
-
-**Note**: Scrobbling only works when the application is built with the `lastfm` feature. Without this feature, Last.fm settings in the config file are ignored.
 
 ### Command Mode
 

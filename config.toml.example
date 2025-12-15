@@ -11,9 +11,7 @@ playlist_dir = "/home/user/.local/share/impulse/playlists"
 volume = 0.5
 
 # Last.fm scrobbling configuration (optional)
-# To enable scrobbling, compile with the 'lastfm' feature:
-#   cargo build --release --features lastfm
-# Then uncomment and fill in the following section:
+# To enable scrobbling, uncomment and fill in the following section:
 #
 # [lastfm]
 # enabled = true
