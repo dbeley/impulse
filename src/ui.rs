@@ -1,4 +1,4 @@
-use crate::browser::{is_audio_file, Browser};
+use crate::browser::Browser;
 use crate::config::Config;
 use crate::lastfm::LastfmScrobbler;
 use crate::player::Player;
@@ -13,14 +13,13 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, Paragraph},
+    widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
     Frame, Terminal,
 };
 use ratatui_image::{picker::Picker, protocol::StatefulProtocol};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
-use walkdir::WalkDir;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Tab {
@@ -59,15 +58,12 @@ pub enum InputMode {
     Normal,
     Search,
     Command,
-    SearchResults,
 }
 
 struct SearchResult {
     path: PathBuf,
-    folder: PathBuf,
     name: String,
     score: i64,
-    depth: usize,
 }
 
 pub struct App {
@@ -91,6 +87,10 @@ pub struct App {
     album_art: Arc<Mutex<Option<Box<dyn StatefulProtocol>>>>,
     lastfm_scrobbler: LastfmScrobbler,
     track_play_time: Arc<Mutex<Option<SystemTime>>>,
+    browser_state: ListState,
+    queue_state: ListState,
+    playlist_state: ListState,
+    search_state: ListState,
 }
 
 impl App {
@@ -130,6 +130,10 @@ impl App {
             album_art: Arc::new(Mutex::new(None)),
             lastfm_scrobbler,
             track_play_time: Arc::new(Mutex::new(None)),
+            browser_state: ListState::default(),
+            queue_state: ListState::default(),
+            playlist_state: ListState::default(),
+            search_state: ListState::default(),
         })
     }
 
@@ -165,7 +169,6 @@ impl App {
             InputMode::Normal => self.handle_normal_mode(key)?,
             InputMode::Search => self.handle_search_mode(key)?,
             InputMode::Command => self.handle_command_mode(key)?,
-            InputMode::SearchResults => self.handle_search_results_keys(key)?,
         }
         Ok(())
     }
@@ -268,6 +271,16 @@ impl App {
             KeyCode::Char('G') => {
                 self.browser.select_last();
             }
+            KeyCode::PageDown => {
+                for _ in 0..10 {
+                    self.browser.select_next();
+                }
+            }
+            KeyCode::PageUp => {
+                for _ in 0..10 {
+                    self.browser.select_prev();
+                }
+            }
             KeyCode::Char('l') | KeyCode::Enter | KeyCode::Right => {
                 if let Some(track) = self.browser.enter_selected() {
                     self.queue.add(track.clone());
@@ -321,6 +334,14 @@ impl App {
                 if !self.queue.is_empty() {
                     self.queue_selected = self.queue.len() - 1;
                 }
+            }
+            KeyCode::PageDown => {
+                if !self.queue.is_empty() {
+                    self.queue_selected = (self.queue_selected + 10).min(self.queue.len() - 1);
+                }
+            }
+            KeyCode::PageUp => {
+                self.queue_selected = self.queue_selected.saturating_sub(10);
             }
             KeyCode::Enter => {
                 // Scrobble current track if needed before jumping
@@ -409,6 +430,28 @@ impl App {
                 self.playlist_selected = self.playlist_selected.saturating_sub(1);
                 self.playlist_track_selected = 0;
             }
+            KeyCode::Char('g') => {
+                self.playlist_selected = 0;
+                self.playlist_track_selected = 0;
+            }
+            KeyCode::Char('G') => {
+                let playlists = self.playlist_manager.playlists();
+                if !playlists.is_empty() {
+                    self.playlist_selected = playlists.len() - 1;
+                    self.playlist_track_selected = 0;
+                }
+            }
+            KeyCode::PageDown => {
+                let playlists = self.playlist_manager.playlists();
+                if !playlists.is_empty() {
+                    self.playlist_selected = (self.playlist_selected + 10).min(playlists.len() - 1);
+                    self.playlist_track_selected = 0;
+                }
+            }
+            KeyCode::PageUp => {
+                self.playlist_selected = self.playlist_selected.saturating_sub(10);
+                self.playlist_track_selected = 0;
+            }
             KeyCode::Char('l') | KeyCode::Enter => {
                 if let Some(playlist) = self.playlist_manager.get_playlist(self.playlist_selected) {
                     self.queue.add_multiple(playlist.tracks.clone());
@@ -427,30 +470,43 @@ impl App {
     fn handle_search_mode(&mut self, key: KeyEvent) -> Result<()> {
         match key.code {
             KeyCode::Enter => {
-                let results = self.collect_search_results();
-                if results.is_empty() {
+                if !self.search_results.is_empty() {
+                    if let Some(result) = self.search_results.get(self.search_result_selected) {
+                        // Select the entry in the browser
+                        self.browser.select_entry_by_path(&result.path);
+
+                        // If it's a directory, we could enter it, but for now just select it
+                        // If it's a file, just select it
+                        self.status_message = format!("Selected: {}", result.name);
+                    }
+                    self.input_mode = InputMode::Normal;
+                    self.clear_search_results();
+                } else {
                     self.status_message = format!("No match found for: {}", self.search_query);
                     self.input_mode = InputMode::Normal;
-                } else {
-                    self.search_results = results;
-                    self.search_result_selected = 0;
-                    self.input_mode = InputMode::SearchResults;
-                    self.status_message = format!(
-                        "{} match(es) for '{}'",
-                        self.search_results.len(),
-                        self.search_query
-                    );
                 }
             }
             KeyCode::Esc => {
                 self.input_mode = InputMode::Normal;
                 self.search_query.clear();
+                self.clear_search_results();
             }
             KeyCode::Char(c) => {
                 self.search_query.push(c);
+                self.update_search_results();
             }
             KeyCode::Backspace => {
                 self.search_query.pop();
+                self.update_search_results();
+            }
+            KeyCode::Down => {
+                if !self.search_results.is_empty() {
+                    self.search_result_selected =
+                        (self.search_result_selected + 1).min(self.search_results.len() - 1);
+                }
+            }
+            KeyCode::Up => {
+                self.search_result_selected = self.search_result_selected.saturating_sub(1);
             }
             _ => {}
         }
@@ -478,98 +534,50 @@ impl App {
         Ok(())
     }
 
-    fn handle_search_results_keys(&mut self, key: KeyEvent) -> Result<()> {
-        match key.code {
-            KeyCode::Char('j') | KeyCode::Down => {
-                if !self.search_results.is_empty() {
-                    self.search_result_selected =
-                        (self.search_result_selected + 1).min(self.search_results.len() - 1);
-                }
-            }
-            KeyCode::Char('k') | KeyCode::Up => {
-                self.search_result_selected = self.search_result_selected.saturating_sub(1);
-            }
-            KeyCode::Enter => {
-                if let Some(result) = self.search_results.get(self.search_result_selected) {
-                    self.browser.navigate_to(result.folder.clone());
-                    self.browser.select_entry_by_path(&result.path);
-                    self.status_message = format!("Found track in: {}", result.folder.display());
-                }
-                self.input_mode = InputMode::Normal;
-                self.clear_search_results();
-            }
-            KeyCode::Esc => {
-                self.input_mode = InputMode::Normal;
-                self.clear_search_results();
-                self.status_message = String::from("Search canceled");
-            }
-            _ => {}
-        }
-        Ok(())
-    }
-
-    fn collect_search_results(&self) -> Vec<SearchResult> {
+    fn update_search_results(&mut self) {
         let query = self.search_query.trim();
         if query.is_empty() {
-            return Vec::new();
+            self.search_results.clear();
+            self.search_result_selected = 0;
+            return;
         }
 
         let matcher = SkimMatcherV2::default();
         let mut results = Vec::new();
 
-        for entry in WalkDir::new(self.browser.current_dir())
-            .follow_links(true)
-            .into_iter()
-            .filter_map(|e| e.ok())
-        {
-            let path = entry.path();
-            if !path.is_file() || !is_audio_file(path) {
+        // Search only in current directory (folders and audio files)
+        let entries = self.browser.entries();
+
+        for entry in entries {
+            // Skip parent directory entry
+            if matches!(entry, crate::browser::FileEntry::ParentDirectory(_)) {
                 continue;
             }
 
-            let name = path
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("")
-                .to_string();
+            let path = entry.path();
+            let name = entry.name();
 
-            let folder = path
-                .parent()
-                .map(|p| p.to_path_buf())
-                .unwrap_or_else(|| self.browser.current_dir().to_path_buf());
-
-            let folder_name = folder.file_name().and_then(|n| n.to_str()).unwrap_or("");
-
-            let searchable_name = if folder_name.is_empty() {
-                name.clone()
-            } else {
-                format!("{} {}", folder_name, name)
-            };
-
-            if let Some(score) = matcher.fuzzy_match(&searchable_name, query) {
+            // Match against entry name (folder or file)
+            if let Some(score) = matcher.fuzzy_match(&name, query) {
                 results.push(SearchResult {
                     path: path.to_path_buf(),
-                    folder,
                     name,
                     score,
-                    depth: entry.depth(),
                 });
             }
         }
 
-        results.sort_by(|a, b| {
-            b.score
-                .cmp(&a.score)
-                .then(a.depth.cmp(&b.depth))
-                .then(a.name.cmp(&b.name))
-        });
+        // Sort by score (highest first)
+        results.sort_by(|a, b| b.score.cmp(&a.score).then(a.name.cmp(&b.name)));
 
-        const MAX_RESULTS: usize = 30;
+        const MAX_RESULTS: usize = 50;
         if results.len() > MAX_RESULTS {
             results.truncate(MAX_RESULTS);
         }
 
-        results
+        self.search_results = results;
+        // Auto-select the most relevant result (first one with highest score)
+        self.search_result_selected = 0;
     }
 
     fn execute_command(&mut self) -> Result<()> {
@@ -689,7 +697,7 @@ impl App {
 
         self.draw_tabs(f, chunks[0]);
         self.draw_content(f, chunks[1]);
-        if matches!(self.input_mode, InputMode::SearchResults) {
+        if matches!(self.input_mode, InputMode::Search) && !self.search_results.is_empty() {
             self.draw_search_overlay(f);
         }
         self.draw_status(f, chunks[2]);
@@ -720,7 +728,7 @@ impl App {
         }
     }
 
-    fn draw_browser(&self, f: &mut Frame, area: Rect) {
+    fn draw_browser(&mut self, f: &mut Frame, area: Rect) {
         let entries = self.browser.entries();
         let items: Vec<ListItem> = entries
             .iter()
@@ -745,7 +753,8 @@ impl App {
             .block(Block::default().borders(Borders::ALL).title(title))
             .highlight_style(Style::default().add_modifier(Modifier::REVERSED));
 
-        f.render_widget(list, area);
+        self.browser_state.select(Some(self.browser.selected()));
+        f.render_stateful_widget(list, area, &mut self.browser_state);
     }
 
     fn draw_now_playing(&mut self, f: &mut Frame, area: Rect) {
@@ -758,7 +767,7 @@ impl App {
         self.draw_player(f, chunks[1]);
     }
 
-    fn draw_queue(&self, f: &mut Frame, area: Rect) {
+    fn draw_queue(&mut self, f: &mut Frame, area: Rect) {
         let tracks = self.queue.tracks();
         let current_index = self.queue.current_index();
 
@@ -796,59 +805,20 @@ impl App {
             .block(Block::default().borders(Borders::ALL).title(title))
             .highlight_style(Style::default().add_modifier(Modifier::REVERSED));
 
-        f.render_widget(list, area);
+        self.queue_state.select(Some(self.queue_selected));
+        f.render_stateful_widget(list, area, &mut self.queue_state);
     }
 
     fn draw_player(&mut self, f: &mut Frame, area: Rect) {
         let metadata = self.player.current_metadata();
 
-        // Split area: left for album art, right for metadata
+        // Split area with percentage-based layout: 55% for track metadata (left), 45% for album art (right)
         let chunks = Layout::default()
             .direction(Direction::Horizontal)
-            .constraints([Constraint::Length(40), Constraint::Min(0)])
+            .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
             .split(area);
 
-        // Draw album art if available
-        if let Some(ref meta) = metadata {
-            if let Some(ref cover_data) = meta.cover_art {
-                // Try to load and display the album art
-                match image::load_from_memory(cover_data) {
-                    Ok(img) => {
-                        let mut picker = self.image_picker.lock().unwrap();
-                        let mut album_art = self.album_art.lock().unwrap();
-
-                        // Create or update the album art protocol
-                        *album_art = Some(picker.new_resize_protocol(img));
-
-                        if let Some(ref mut protocol) = *album_art {
-                            let image_widget = ratatui_image::StatefulImage::new(None);
-                            drop(picker); // Release lock before rendering
-                            f.render_stateful_widget(image_widget, chunks[0], protocol);
-                        }
-                    }
-                    Err(_) => {
-                        // Failed to decode album art
-                        let placeholder = Paragraph::new("Invalid Album Art")
-                            .block(Block::default().borders(Borders::ALL))
-                            .style(Style::default().fg(Color::Red));
-                        f.render_widget(placeholder, chunks[0]);
-                    }
-                }
-            } else {
-                // No album art - show placeholder
-                let placeholder = Paragraph::new("No Album Art")
-                    .block(Block::default().borders(Borders::ALL))
-                    .style(Style::default().fg(Color::DarkGray));
-                f.render_widget(placeholder, chunks[0]);
-            }
-        } else {
-            let placeholder = Paragraph::new("No Album Art")
-                .block(Block::default().borders(Borders::ALL))
-                .style(Style::default().fg(Color::DarkGray));
-            f.render_widget(placeholder, chunks[0]);
-        }
-
-        // Draw metadata
+        // Render track metadata in left section (55% of width)
         let mut text = vec![];
 
         if let Some(ref meta) = metadata {
@@ -987,10 +957,50 @@ impl App {
         let paragraph =
             Paragraph::new(text).block(Block::default().borders(Borders::ALL).title("Player"));
 
-        f.render_widget(paragraph, chunks[1]);
+        f.render_widget(paragraph, chunks[0]);
+
+        // Render album art in right section (45% of width)
+        if let Some(ref meta) = metadata {
+            if let Some(ref cover_data) = meta.cover_art {
+                // Try to load and display the album art
+                match image::load_from_memory(cover_data) {
+                    Ok(img) => {
+                        let mut picker = self.image_picker.lock().unwrap();
+                        let mut album_art = self.album_art.lock().unwrap();
+
+                        // Create or update the album art protocol
+                        *album_art = Some(picker.new_resize_protocol(img));
+
+                        if let Some(ref mut protocol) = *album_art {
+                            let image_widget = ratatui_image::StatefulImage::new(None);
+                            drop(picker); // Release lock before rendering
+                            f.render_stateful_widget(image_widget, chunks[1], protocol);
+                        }
+                    }
+                    Err(_) => {
+                        // Failed to decode album art
+                        let placeholder = Paragraph::new("Invalid Album Art")
+                            .block(Block::default().borders(Borders::ALL))
+                            .style(Style::default().fg(Color::Red));
+                        f.render_widget(placeholder, chunks[1]);
+                    }
+                }
+            } else {
+                // No album art - show placeholder
+                let placeholder = Paragraph::new("No Album Art")
+                    .block(Block::default().borders(Borders::ALL))
+                    .style(Style::default().fg(Color::DarkGray));
+                f.render_widget(placeholder, chunks[1]);
+            }
+        } else {
+            let placeholder = Paragraph::new("No Album Art")
+                .block(Block::default().borders(Borders::ALL))
+                .style(Style::default().fg(Color::DarkGray));
+            f.render_widget(placeholder, chunks[1]);
+        }
     }
 
-    fn draw_playlists(&self, f: &mut Frame, area: Rect) {
+    fn draw_playlists(&mut self, f: &mut Frame, area: Rect) {
         let playlists = self.playlist_manager.playlists();
 
         let items: Vec<ListItem> = playlists
@@ -1015,10 +1025,11 @@ impl App {
             .block(Block::default().borders(Borders::ALL).title(title))
             .highlight_style(Style::default().add_modifier(Modifier::REVERSED));
 
-        f.render_widget(list, area);
+        self.playlist_state.select(Some(self.playlist_selected));
+        f.render_stateful_widget(list, area, &mut self.playlist_state);
     }
 
-    fn draw_search_overlay(&self, f: &mut Frame) {
+    fn draw_search_overlay(&mut self, f: &mut Frame) {
         let area = centered_rect(60, 50, f.area());
         let items: Vec<ListItem> = self
             .search_results
@@ -1030,7 +1041,13 @@ impl App {
                     style = style.fg(Color::Yellow).add_modifier(Modifier::BOLD);
                 }
 
-                let content = format!("{} — {}", result.name, result.folder.display());
+                // Show icon for folders vs files
+                let prefix = if result.path.is_dir() {
+                    "📁 "
+                } else {
+                    "🎵 "
+                };
+                let content = format!("{}{}", prefix, result.name);
                 ListItem::new(content).style(style)
             })
             .collect();
@@ -1041,19 +1058,26 @@ impl App {
                 .title("Search Results"),
         );
 
-        f.render_widget(list, area);
+        self.search_state.select(Some(self.search_result_selected));
+        f.render_stateful_widget(list, area, &mut self.search_state);
     }
 
     fn draw_status(&self, f: &mut Frame, area: Rect) {
         let status_text = match self.input_mode {
             InputMode::Normal => self.status_message.clone(),
-            InputMode::Search => format!("Search: {}", self.search_query),
+            InputMode::Search => {
+                if self.search_results.is_empty() {
+                    format!("Search: {}", self.search_query)
+                } else {
+                    format!(
+                        "Search: {} ({}/{} results, ↑/↓ navigate, Enter select, Esc cancel)",
+                        self.search_query,
+                        self.search_result_selected + 1,
+                        self.search_results.len()
+                    )
+                }
+            }
             InputMode::Command => format!(":{}", self.command_input),
-            InputMode::SearchResults => format!(
-                "Search results: {}/{} (↑/↓ Navigate, Enter open, Esc cancel)",
-                self.search_result_selected + 1,
-                self.search_results.len()
-            ),
         };
 
         let paragraph = Paragraph::new(status_text)
