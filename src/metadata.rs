@@ -57,6 +57,11 @@ impl TrackMetadata {
             metadata.read_visuals(metadata_rev.visuals());
         }
 
+        // If no embedded cover art, look for external image files
+        if metadata.cover_art.is_none() {
+            metadata.cover_art = Self::find_external_cover_art(path);
+        }
+
         Ok(metadata)
     }
 
@@ -87,6 +92,68 @@ impl TrackMetadata {
         if let Some(visual) = visuals.first() {
             self.cover_art = Some(visual.data.to_vec());
         }
+    }
+
+    fn find_external_cover_art(audio_path: &Path) -> Option<Vec<u8>> {
+        // Get the directory containing the audio file
+        let dir = audio_path.parent()?;
+
+        // Common cover art filenames (case-insensitive)
+        let cover_names = [
+            "cover.jpg",
+            "cover.jpeg",
+            "cover.png",
+            "folder.jpg",
+            "folder.jpeg",
+            "folder.png",
+            "album.jpg",
+            "album.jpeg",
+            "album.png",
+            "front.jpg",
+            "front.jpeg",
+            "front.png",
+            "albumart.jpg",
+            "albumart.jpeg",
+            "albumart.png",
+            "Cover.jpg",
+            "Cover.jpeg",
+            "Cover.png",
+            "Folder.jpg",
+            "Folder.jpeg",
+            "Folder.png",
+            "Album.jpg",
+            "Album.jpeg",
+            "Album.png",
+        ];
+
+        // Try each common filename
+        for name in &cover_names {
+            let cover_path = dir.join(name);
+            if cover_path.exists() && cover_path.is_file() {
+                if let Ok(data) = std::fs::read(&cover_path) {
+                    return Some(data);
+                }
+            }
+        }
+
+        // If no exact match, try finding any image file in the directory
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_file() {
+                    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+                        let ext_lower = ext.to_lowercase();
+                        if matches!(ext_lower.as_str(), "jpg" | "jpeg" | "png" | "gif" | "webp") {
+                            if let Ok(data) = std::fs::read(&path) {
+                                return Some(data);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        None
     }
 
     pub fn format_duration(&self) -> String {
