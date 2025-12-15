@@ -802,53 +802,13 @@ impl App {
     fn draw_player(&mut self, f: &mut Frame, area: Rect) {
         let metadata = self.player.current_metadata();
 
-        // Split area: left for album art, right for metadata
+        // Split area: left for metadata, right for album art (inverted from before)
         let chunks = Layout::default()
             .direction(Direction::Horizontal)
-            .constraints([Constraint::Length(40), Constraint::Min(0)])
+            .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
             .split(area);
 
-        // Draw album art if available
-        if let Some(ref meta) = metadata {
-            if let Some(ref cover_data) = meta.cover_art {
-                // Try to load and display the album art
-                match image::load_from_memory(cover_data) {
-                    Ok(img) => {
-                        let mut picker = self.image_picker.lock().unwrap();
-                        let mut album_art = self.album_art.lock().unwrap();
-
-                        // Create or update the album art protocol
-                        *album_art = Some(picker.new_resize_protocol(img));
-
-                        if let Some(ref mut protocol) = *album_art {
-                            let image_widget = ratatui_image::StatefulImage::new(None);
-                            drop(picker); // Release lock before rendering
-                            f.render_stateful_widget(image_widget, chunks[0], protocol);
-                        }
-                    }
-                    Err(_) => {
-                        // Failed to decode album art
-                        let placeholder = Paragraph::new("Invalid Album Art")
-                            .block(Block::default().borders(Borders::ALL))
-                            .style(Style::default().fg(Color::Red));
-                        f.render_widget(placeholder, chunks[0]);
-                    }
-                }
-            } else {
-                // No album art - show placeholder
-                let placeholder = Paragraph::new("No Album Art")
-                    .block(Block::default().borders(Borders::ALL))
-                    .style(Style::default().fg(Color::DarkGray));
-                f.render_widget(placeholder, chunks[0]);
-            }
-        } else {
-            let placeholder = Paragraph::new("No Album Art")
-                .block(Block::default().borders(Borders::ALL))
-                .style(Style::default().fg(Color::DarkGray));
-            f.render_widget(placeholder, chunks[0]);
-        }
-
-        // Draw metadata
+        // Draw metadata first (left side)
         let mut text = vec![];
 
         if let Some(ref meta) = metadata {
@@ -987,7 +947,47 @@ impl App {
         let paragraph =
             Paragraph::new(text).block(Block::default().borders(Borders::ALL).title("Player"));
 
-        f.render_widget(paragraph, chunks[1]);
+        f.render_widget(paragraph, chunks[0]);
+
+        // Draw album art on right side
+        if let Some(ref meta) = metadata {
+            if let Some(ref cover_data) = meta.cover_art {
+                // Try to load and display the album art
+                match image::load_from_memory(cover_data) {
+                    Ok(img) => {
+                        let mut picker = self.image_picker.lock().unwrap();
+                        let mut album_art = self.album_art.lock().unwrap();
+
+                        // Create or update the album art protocol
+                        *album_art = Some(picker.new_resize_protocol(img));
+
+                        if let Some(ref mut protocol) = *album_art {
+                            let image_widget = ratatui_image::StatefulImage::new(None);
+                            drop(picker); // Release lock before rendering
+                            f.render_stateful_widget(image_widget, chunks[1], protocol);
+                        }
+                    }
+                    Err(_) => {
+                        // Failed to decode album art
+                        let placeholder = Paragraph::new("Invalid Album Art")
+                            .block(Block::default().borders(Borders::ALL))
+                            .style(Style::default().fg(Color::Red));
+                        f.render_widget(placeholder, chunks[1]);
+                    }
+                }
+            } else {
+                // No album art - show placeholder
+                let placeholder = Paragraph::new("No Album Art")
+                    .block(Block::default().borders(Borders::ALL))
+                    .style(Style::default().fg(Color::DarkGray));
+                f.render_widget(placeholder, chunks[1]);
+            }
+        } else {
+            let placeholder = Paragraph::new("No Album Art")
+                .block(Block::default().borders(Borders::ALL))
+                .style(Style::default().fg(Color::DarkGray));
+            f.render_widget(placeholder, chunks[1]);
+        }
     }
 
     fn draw_playlists(&self, f: &mut Frame, area: Rect) {
