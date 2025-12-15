@@ -146,10 +146,10 @@ impl Player {
         if self.is_paused() {
             return;
         }
-        
+
         // Get elapsed time before we pause
         let elapsed = self.get_elapsed_duration();
-        
+
         // Now pause the sink and store elapsed time
         if let Some(sink) = self.sink.lock().unwrap().as_ref() {
             *self.paused_elapsed.lock().unwrap() = elapsed;
@@ -217,7 +217,8 @@ impl Player {
         // Lock all needed mutexes upfront in a consistent order to avoid deadlocks
         let paused_elapsed = *self.paused_elapsed.lock().unwrap();
         let playback_start_time = *self.playback_start_time.lock().unwrap();
-        let is_paused = self.sink
+        let is_paused = self
+            .sink
             .lock()
             .unwrap()
             .as_ref()
