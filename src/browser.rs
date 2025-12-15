@@ -136,6 +136,7 @@ impl Browser {
         &self.current_dir
     }
 
+    #[allow(dead_code)]
     pub fn navigate_to(&mut self, path: PathBuf) {
         if path.is_dir() {
             self.remember_selection();
