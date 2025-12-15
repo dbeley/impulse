@@ -9,11 +9,12 @@ Minimalist music player with minimal dependencies, focusing on speed and a keybo
 - 🔍 **Fuzzy search** - Quickly find tracks with fuzzy matching
 - 📋 **Queue management** - Build and manage your playback queue
 - 💾 **Playlist support** - Create and manage M3U playlists
-- 🎨 **Minimal TUI** - Clean interface with multiple tabs (Browser, Queue, Player, Playlists)
+- 🎨 **Minimal TUI** - Clean interface with multiple tabs (Browser, Now Playing, Playlists)
 - ⚙️  **Configuration file** - Customize settings via TOML config
 - 🚀 **Minimal dependencies** - Fast and lightweight
 - 🎶 **Multiple format support** - MP3, FLAC, OGG Vorbis, Opus, WAV, M4A, AAC, ALAC
 - 🎧 **Last.fm scrobbling** - Optional support for scrobbling to Last.fm
+- 🖼️  **Album art display** - Shows embedded and external cover art in the player tab
 
 ## Installation
 
@@ -105,9 +106,10 @@ Playlists (including saved queues) default to `~/.local/share/impulse/playlists`
 - `Enter` - Browse to the highlighted file’s folder and select it in the browser.
 - `Esc` - Close the search overlay without changing folders.
 
-### Player Tab
+### Now Playing Tab
 - `+` / `=` - Increase volume
 - `-` - Decrease volume
+- Displays current track metadata, progress, and album artwork
 
 ### Playlists Tab
 - `j` / `↓` - Move down
@@ -135,27 +137,15 @@ Impulse supports scrobbling your listening history to Last.fm. To enable this fe
    - Create an API account at https://www.last.fm/api/account/create
    - You'll receive an API key and API secret
 
-2. **Generate a session key**:
-   - You need to authenticate once to get a session key
-   - You can use online tools or the Last.fm authentication flow
-   - See https://www.last.fm/api/authentication for details
-
-   Impulse can now detect when the API key/secret are set but no session key exists, and will guide you through the Last.fm authentication flow (opening the browser and storing the returned session key in your config) automatically on first startup.
-
-3. **Configure Impulse**:
+2. **Configure Impulse**:
    Add the following to your `~/.config/impulse/config.toml`:
    ```toml
    [lastfm]
    enabled = true
    api_key = "your_lastfm_api_key"
    api_secret = "your_lastfm_api_secret"
-   session_key = "your_lastfm_session_key"
+   session_key = "" # keep it empty, it will be populated on first start
    ```
-
-Once configured, Impulse will automatically:
-- Update "Now Playing" status when you start a track
-- Scrobble tracks after you've listened to at least half the duration (or 4 minutes, whichever is lower)
-- Follow Last.fm's scrobbling guidelines
 
 ### Command Mode
 
@@ -179,6 +169,16 @@ Impulse supports all major audio formats through the Symphonia audio decoding li
 - **ALAC** - Apple Lossless Audio Codec
 
 **Note:** Opus support requires cmake and libopus system libraries. When using the Nix development environment, these dependencies are automatically provided. For non-Nix installations, you'll need to install cmake and libopus-dev on your system.
+
+## Album Art Support
+
+Impulse displays album artwork in the Now Playing tab. It supports:
+
+- **Embedded cover art**: Extracted from audio file metadata (ID3v2, Vorbis comments, etc.)
+- **External cover art**: Automatically finds cover images in the same directory as the audio file
+  - Common filenames: `cover.jpg`, `folder.jpg`, `album.jpg`, `front.jpg`, `albumart.jpg` (and `.png` variants)
+  - Also searches for any `.jpg`, `.jpeg`, `.png`, `.gif`, or `.webp` files in the directory
+- Supports various image formats through the terminal's image protocol (iTerm2, Kitty, etc.)
 
 ## Requirements
 
