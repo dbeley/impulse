@@ -96,7 +96,7 @@ impl LastfmScrobbler {
 
         let scrobbler_guard = self.scrobbler.lock().unwrap();
         if let Some(scrobbler) = scrobbler_guard.as_ref() {
-            let timestamp = self.current_track_start.lock().unwrap().take();
+            let timestamp = *self.current_track_start.lock().unwrap();
 
             if let Some(ts) = timestamp {
                 let (artist, title, album) = Self::extract_track_info(path, metadata);

@@ -13,13 +13,15 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Gauge, List, ListItem, ListState, Paragraph},
+    widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
     Frame, Terminal,
 };
 use ratatui_image::{picker::Picker, protocol::StatefulProtocol};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
+
+const HELP_TEXT: &str = "Keys: j/k/↑/↓=nav, l/→/Enter=select, h/←=back, Space/p=play/pause, >=next, <=prev, a=add, A=add-all, Tab/1-3=switch-tab, /=search, q=quit";
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Tab {
@@ -126,8 +128,8 @@ impl App {
             playlist_selected: 0,
             playlist_track_selected: 0,
             should_quit: false,
-            status_message: String::from("Welcome to Impulse! Press '?' for help"),
-            status_message_time: Some(SystemTime::now()),
+            status_message: String::new(),
+            status_message_time: None,
             image_picker: Arc::new(Mutex::new(picker)),
             album_art: Arc::new(Mutex::new(None)),
             lastfm_scrobbler,
@@ -197,9 +199,7 @@ impl App {
                 self.should_quit = true;
             }
             KeyCode::Char('?') => {
-                self.set_status(String::from(
-                    "Keys: j/k/↑/↓=nav, l/→/Enter=select, h/←=back, Space/p=play/pause, >=next, <=prev, a=add, A=add-all, Tab/1-3=switch-tab, /=search, q=quit"
-                ));
+                self.set_status(HELP_TEXT.to_string());
             }
             KeyCode::Char('1') => {
                 self.current_tab = Tab::Browser;
@@ -717,7 +717,7 @@ impl App {
                 Constraint::Length(3),
                 Constraint::Min(0),
                 Constraint::Length(3),
-                Constraint::Length(3),
+                Constraint::Length(1),
             ]
         } else {
             vec![
@@ -739,8 +739,8 @@ impl App {
         }
 
         if show_progress {
-            self.draw_progress_bar(f, chunks[2]);
-            self.draw_status(f, chunks[3]);
+            self.draw_status(f, chunks[2]);
+            self.draw_progress_bar(f, chunks[3]);
         } else {
             self.draw_status(f, chunks[2]);
         }
@@ -1128,25 +1128,36 @@ impl App {
             "?:??".to_string()
         };
 
-        let label = format!("{} {} / {}", status_icon, position_str, duration_str);
+        // Build the time label part
+        let time_label = format!("{} {} / {} ", status_icon, position_str, duration_str);
+        let time_label_len = time_label.len();
 
-        let gauge = Gauge::default()
-            .block(Block::default().borders(Borders::ALL).title("Progress"))
-            .gauge_style(
-                Style::default()
-                    .fg(Color::Green)
-                    .bg(Color::Black)
-                    .add_modifier(Modifier::BOLD),
-            )
-            .label(label)
-            .ratio(progress);
+        // Calculate how many characters are available for the progress bar
+        let available_width = (area.width as usize).saturating_sub(time_label_len);
+        let filled_width = ((available_width as f64 * progress) as usize).min(available_width);
+        let empty_width = available_width.saturating_sub(filled_width);
 
-        f.render_widget(gauge, area);
+        let progress_bar = format!(
+            "{}{}{}",
+            time_label,
+            "─".repeat(filled_width),
+            "─".repeat(empty_width)
+        );
+
+        let paragraph = Paragraph::new(progress_bar).style(Style::default().fg(Color::Green));
+
+        f.render_widget(paragraph, area);
     }
 
     fn draw_status(&self, f: &mut Frame, area: Rect) {
         let status_text = match self.input_mode {
-            InputMode::Normal => self.status_message.clone(),
+            InputMode::Normal => {
+                if self.status_message.is_empty() {
+                    HELP_TEXT.to_string()
+                } else {
+                    self.status_message.clone()
+                }
+            }
             InputMode::Search => {
                 if self.search_results.is_empty() {
                     format!("Search: {}", self.search_query)
