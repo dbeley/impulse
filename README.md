@@ -2,6 +2,17 @@
 
 Minimalist music player with minimal dependencies, focusing on speed and a keyboard-centric TUI.
 
+## Screenshots
+
+### Browsing Artists
+![Browser - Artists View](screenshots/01-browser-artists.png)
+
+### Browsing Album Tracks
+![Browser - Album View](screenshots/02-browser-album.png)
+
+### Now Playing
+![Now Playing View](screenshots/03-now-playing.png)
+
 ## Features
 
 - 🎵 **Folder-based browsing** - No library management, just browse your music folders
