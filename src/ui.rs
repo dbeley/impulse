@@ -13,7 +13,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
+    widgets::{Block, Borders, Gauge, List, ListItem, ListState, Paragraph},
     Frame, Terminal,
 };
 use ratatui_image::{picker::Picker, protocol::StatefulProtocol};
@@ -83,6 +83,7 @@ pub struct App {
     playlist_track_selected: usize,
     should_quit: bool,
     status_message: String,
+    status_message_time: Option<SystemTime>,
     image_picker: Arc<Mutex<Picker>>,
     album_art: Arc<Mutex<Option<Box<dyn StatefulProtocol>>>>,
     lastfm_scrobbler: LastfmScrobbler,
@@ -126,6 +127,7 @@ impl App {
             playlist_track_selected: 0,
             should_quit: false,
             status_message: String::from("Welcome to Impulse! Press '?' for help"),
+            status_message_time: Some(SystemTime::now()),
             image_picker: Arc::new(Mutex::new(picker)),
             album_art: Arc::new(Mutex::new(None)),
             lastfm_scrobbler,
@@ -147,14 +149,25 @@ impl App {
                 }
             }
 
+            // Clear status message after 3 seconds
+            if let Some(message_time) = self.status_message_time {
+                if let Ok(elapsed) = SystemTime::now().duration_since(message_time) {
+                    if elapsed.as_secs() >= 3 {
+                        self.status_message.clear();
+                        self.status_message_time = None;
+                    }
+                }
+            }
+
             // Check if current track finished
             if self.player.is_finished() && !self.queue.is_empty() {
                 // Scrobble the finished track if enough time has passed
                 self.scrobble_if_needed();
                 self.play_next();
-            } else if self.player.is_finished() {
-                // Track finished but queue is empty, scrobble it
+            } else if self.player.is_finished() && self.player.current_track().is_some() {
+                // Track finished but queue is empty, scrobble and stop player
                 self.scrobble_if_needed();
+                self.player.stop();
             }
 
             if self.should_quit {
@@ -173,15 +186,20 @@ impl App {
         Ok(())
     }
 
+    fn set_status(&mut self, message: String) {
+        self.status_message = message;
+        self.status_message_time = Some(SystemTime::now());
+    }
+
     fn handle_normal_mode(&mut self, key: KeyEvent) -> Result<()> {
         match key.code {
             KeyCode::Char('q') => {
                 self.should_quit = true;
             }
             KeyCode::Char('?') => {
-                self.status_message = String::from(
+                self.set_status(String::from(
                     "Keys: j/k/↑/↓=nav, l/→/Enter=select, h/←=back, Space/p=play/pause, >=next, <=prev, a=add, A=add-all, Tab/1-3=switch-tab, /=search, q=quit"
-                );
+                ));
             }
             KeyCode::Char('1') => {
                 self.current_tab = Tab::Browser;
@@ -209,16 +227,16 @@ impl App {
             KeyCode::Char(' ') | KeyCode::Char('p') => {
                 if self.player.is_playing() {
                     self.player.pause();
-                    self.status_message = String::from("Paused");
+                    self.set_status(String::from("Paused"));
                 } else if self.player.is_paused() {
                     self.player.resume();
-                    self.status_message = String::from("Resumed");
+                    self.set_status(String::from("Resumed"));
                 } else if let Some(track) = self.queue.current() {
                     let track_clone = track.clone();
                     if let Err(e) = self.player.play(track_clone.clone()) {
-                        self.status_message = format!("Error playing: {}", e);
+                        self.set_status(format!("Error playing: {}", e));
                     } else {
-                        self.status_message = format!("Playing: {}", track_clone.display());
+                        self.set_status(format!("Playing: {}", track_clone.display()));
                         self.start_track(&track_clone);
                     }
                 }
@@ -232,7 +250,7 @@ impl App {
             KeyCode::Char('s') => {
                 self.scrobble_if_needed();
                 self.player.stop();
-                self.status_message = String::from("Stopped");
+                self.set_status(String::from("Stopped"));
             }
             _ => {
                 self.handle_tab_keys(key)?;
@@ -284,11 +302,11 @@ impl App {
             KeyCode::Char('l') | KeyCode::Enter | KeyCode::Right => {
                 if let Some(track) = self.browser.enter_selected() {
                     self.queue.add(track.clone());
-                    self.status_message = format!("Added to queue: {}", track.display());
+                    self.set_status(format!("Added to queue: {}", track.display()));
 
                     if self.queue.len() == 1 && !self.player.is_playing() {
                         if let Err(e) = self.player.play(track.clone()) {
-                            self.status_message = format!("Error playing: {}", e);
+                            self.set_status(format!("Error playing: {}", e));
                         } else {
                             self.start_track(&track);
                         }
@@ -302,7 +320,7 @@ impl App {
                 if let Some(entry) = self.browser.selected_entry() {
                     if !entry.is_dir() {
                         self.queue.add(entry.path().to_path_buf());
-                        self.status_message = format!("Added to queue: {}", entry.name());
+                        self.set_status(format!("Added to queue: {}", entry.name()));
                     }
                 }
             }
@@ -310,7 +328,7 @@ impl App {
                 let files = self.browser.get_all_audio_files();
                 let count = files.len();
                 self.queue.add_multiple(files);
-                self.status_message = format!("Added {} tracks to queue", count);
+                self.set_status(format!("Added {} tracks to queue", count));
             }
             _ => {}
         }
@@ -350,9 +368,9 @@ impl App {
                 if let Some(track) = self.queue.jump_to(self.queue_selected) {
                     let track_clone = track.clone();
                     if let Err(e) = self.player.play(track_clone.clone()) {
-                        self.status_message = format!("Error playing: {}", e);
+                        self.set_status(format!("Error playing: {}", e));
                     } else {
-                        self.status_message = format!("Playing: {}", track_clone.display());
+                        self.set_status(format!("Playing: {}", track_clone.display()));
                         self.start_track(&track_clone);
                     }
                 }
@@ -360,7 +378,7 @@ impl App {
             KeyCode::Char('d') | KeyCode::Delete | KeyCode::Backspace => {
                 if !self.queue.is_empty() {
                     self.queue.remove(self.queue_selected);
-                    self.status_message = String::from("Removed from queue");
+                    self.set_status(String::from("Removed from queue"));
                     if self.queue_selected >= self.queue.len() && !self.queue.is_empty() {
                         self.queue_selected = self.queue.len() - 1;
                     }
@@ -370,29 +388,30 @@ impl App {
                 if self.queue_selected > 0 {
                     self.queue.move_up(self.queue_selected);
                     self.queue_selected -= 1;
-                    self.status_message = String::from("Moved track up");
+                    self.set_status(String::from("Moved track up"));
                 }
             }
             KeyCode::Char('J') => {
                 if self.queue_selected + 1 < self.queue.len() {
                     self.queue.move_down(self.queue_selected);
                     self.queue_selected += 1;
-                    self.status_message = String::from("Moved track down");
+                    self.set_status(String::from("Moved track down"));
                 }
             }
             KeyCode::Char('c') => {
                 self.queue.clear();
                 self.queue_selected = 0;
-                self.status_message = String::from("Queue cleared");
+                self.set_status(String::from("Queue cleared"));
             }
             KeyCode::Char('S') => {
                 if self.queue.is_empty() {
-                    self.status_message = String::from("Queue is empty - nothing to save");
+                    self.set_status(String::from("Queue is empty - nothing to save"));
                 } else {
                     self.input_mode = InputMode::Command;
                     self.command_input = String::from("save-queue ");
-                    self.status_message =
-                        String::from("Enter name to save queue as playlist (default folder)");
+                    self.set_status(String::from(
+                        "Enter name to save queue as playlist (default folder)",
+                    ));
                 }
             }
             _ => {}
@@ -405,12 +424,12 @@ impl App {
             KeyCode::Char('+') | KeyCode::Char('=') => {
                 self.config.volume = (self.config.volume + 0.1).min(1.0);
                 self.player.set_volume(self.config.volume);
-                self.status_message = format!("Volume: {:.0}%", self.config.volume * 100.0);
+                self.set_status(format!("Volume: {:.0}%", self.config.volume * 100.0));
             }
             KeyCode::Char('-') => {
                 self.config.volume = (self.config.volume - 0.1).max(0.0);
                 self.player.set_volume(self.config.volume);
-                self.status_message = format!("Volume: {:.0}%", self.config.volume * 100.0);
+                self.set_status(format!("Volume: {:.0}%", self.config.volume * 100.0));
             }
             _ => {}
         }
@@ -455,12 +474,12 @@ impl App {
             KeyCode::Char('l') | KeyCode::Enter => {
                 if let Some(playlist) = self.playlist_manager.get_playlist(self.playlist_selected) {
                     self.queue.add_multiple(playlist.tracks.clone());
-                    self.status_message = format!("Added playlist '{}' to queue", playlist.name);
+                    self.set_status(format!("Added playlist '{}' to queue", playlist.name));
                 }
             }
             KeyCode::Char('r') => {
                 self.playlist_manager.load_playlists();
-                self.status_message = String::from("Playlists reloaded");
+                self.set_status(String::from("Playlists reloaded"));
             }
             _ => {}
         }
@@ -593,7 +612,7 @@ impl App {
             }
             "save" => {
                 self.config.save()?;
-                self.status_message = String::from("Configuration saved");
+                self.set_status(String::from("Configuration saved"));
             }
             "save-queue" | "savequeue" => {
                 let name = if parts.len() > 1 {
@@ -608,12 +627,12 @@ impl App {
                     if let Ok(vol) = parts[1].parse::<f32>() {
                         self.config.volume = (vol / 100.0).clamp(0.0, 1.0);
                         self.player.set_volume(self.config.volume);
-                        self.status_message = format!("Volume: {:.0}%", self.config.volume * 100.0);
+                        self.set_status(format!("Volume: {:.0}%", self.config.volume * 100.0));
                     }
                 }
             }
             _ => {
-                self.status_message = format!("Unknown command: {}", parts[0]);
+                self.set_status(format!("Unknown command: {}", parts[0]));
             }
         }
 
@@ -628,7 +647,7 @@ impl App {
 
     fn save_queue_as_playlist(&mut self, name: Option<&str>) -> Result<()> {
         if self.queue.is_empty() {
-            self.status_message = String::from("Queue is empty - nothing to save");
+            self.set_status(String::from("Queue is empty - nothing to save"));
             return Ok(());
         }
 
@@ -642,7 +661,11 @@ impl App {
             .playlist_manager
             .save_playlist(&playlist_name, self.queue.tracks())?;
 
-        self.status_message = format!("Queue saved as '{}' at {}", playlist_name, path.display());
+        self.set_status(format!(
+            "Queue saved as '{}' at {}",
+            playlist_name,
+            path.display()
+        ));
 
         Ok(())
     }
@@ -662,9 +685,9 @@ impl App {
         if let Some(track) = self.queue.next() {
             let track_clone = track.clone();
             if let Err(e) = self.player.play(track_clone.clone()) {
-                self.status_message = format!("Error playing: {}", e);
+                self.set_status(format!("Error playing: {}", e));
             } else {
-                self.status_message = format!("Playing: {}", track_clone.display());
+                self.set_status(format!("Playing: {}", track_clone.display()));
                 self.start_track(&track_clone);
             }
         }
@@ -677,22 +700,36 @@ impl App {
         if let Some(track) = self.queue.prev() {
             let track_clone = track.clone();
             if let Err(e) = self.player.play(track_clone.clone()) {
-                self.status_message = format!("Error playing: {}", e);
+                self.set_status(format!("Error playing: {}", e));
             } else {
-                self.status_message = format!("Playing: {}", track_clone.display());
+                self.set_status(format!("Playing: {}", track_clone.display()));
                 self.start_track(&track_clone);
             }
         }
     }
 
     fn draw(&mut self, f: &mut Frame) {
-        let chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
+        // Determine if we should show the progress bar
+        let show_progress = !self.queue.is_empty() && self.player.current_track().is_some();
+
+        let constraints = if show_progress {
+            vec![
                 Constraint::Length(3),
                 Constraint::Min(0),
                 Constraint::Length(3),
-            ])
+                Constraint::Length(3),
+            ]
+        } else {
+            vec![
+                Constraint::Length(3),
+                Constraint::Min(0),
+                Constraint::Length(3),
+            ]
+        };
+
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints(constraints)
             .split(f.area());
 
         self.draw_tabs(f, chunks[0]);
@@ -700,7 +737,13 @@ impl App {
         if matches!(self.input_mode, InputMode::Search) && !self.search_results.is_empty() {
             self.draw_search_overlay(f);
         }
-        self.draw_status(f, chunks[2]);
+
+        if show_progress {
+            self.draw_progress_bar(f, chunks[2]);
+            self.draw_status(f, chunks[3]);
+        } else {
+            self.draw_status(f, chunks[2]);
+        }
     }
 
     fn draw_tabs(&self, f: &mut Frame, area: Rect) {
@@ -1060,6 +1103,45 @@ impl App {
 
         self.search_state.select(Some(self.search_result_selected));
         f.render_stateful_widget(list, area, &mut self.search_state);
+    }
+
+    fn draw_progress_bar(&self, f: &mut Frame, area: Rect) {
+        // Get playback status icon
+        let status_icon = if self.player.is_playing() {
+            "▶"
+        } else if self.player.is_paused() {
+            "⏸"
+        } else {
+            "⏹"
+        };
+
+        // Get position and progress in a single call to minimize mutex locks
+        let (position, progress) = self.player.get_position_and_progress();
+        let progress = progress.unwrap_or(0.0);
+
+        let position_secs = position.as_secs();
+        let position_str = format!("{}:{:02}", position_secs / 60, position_secs % 60);
+
+        let duration_str = if let Some(metadata) = self.player.current_metadata() {
+            metadata.format_duration()
+        } else {
+            "?:??".to_string()
+        };
+
+        let label = format!("{} {} / {}", status_icon, position_str, duration_str);
+
+        let gauge = Gauge::default()
+            .block(Block::default().borders(Borders::ALL).title("Progress"))
+            .gauge_style(
+                Style::default()
+                    .fg(Color::Green)
+                    .bg(Color::Black)
+                    .add_modifier(Modifier::BOLD),
+            )
+            .label(label)
+            .ratio(progress);
+
+        f.render_widget(gauge, area);
     }
 
     fn draw_status(&self, f: &mut Frame, area: Rect) {

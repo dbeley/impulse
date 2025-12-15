@@ -6,6 +6,7 @@ use std::io::BufReader;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, SystemTime};
 use symphonia::core::audio::SampleBuffer;
 use symphonia::core::codecs::{CodecRegistry, DecoderOptions};
 use symphonia::core::formats::FormatOptions;
@@ -14,6 +15,15 @@ use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
 use symphonia_adapter_libopus::OpusDecoder;
 
+// MUTEX LOCKING ORDER:
+// To prevent deadlocks, when multiple mutexes need to be locked, they should be acquired
+// in the following order:
+// 1. paused_elapsed
+// 2. playback_start_time
+// 3. sink
+// 4. current_track
+// 5. current_metadata
+
 #[derive(Clone)]
 pub struct Player {
     sink: Arc<Mutex<Option<Sink>>>,
@@ -21,6 +31,8 @@ pub struct Player {
     stream_handle: Arc<OutputStreamHandle>,
     current_track: Arc<Mutex<Option<PathBuf>>>,
     current_metadata: Arc<Mutex<Option<TrackMetadata>>>,
+    playback_start_time: Arc<Mutex<Option<SystemTime>>>,
+    paused_elapsed: Arc<Mutex<Duration>>,
 }
 
 impl Player {
@@ -34,6 +46,8 @@ impl Player {
             stream_handle: Arc::new(stream_handle),
             current_track: Arc::new(Mutex::new(None)),
             current_metadata: Arc::new(Mutex::new(None)),
+            playback_start_time: Arc::new(Mutex::new(None)),
+            paused_elapsed: Arc::new(Mutex::new(Duration::from_secs(0))),
         })
     }
 
@@ -80,6 +94,8 @@ impl Player {
         *self.sink.lock().unwrap() = Some(sink);
         *self.current_track.lock().unwrap() = Some(path);
         *self.current_metadata.lock().unwrap() = metadata;
+        *self.playback_start_time.lock().unwrap() = Some(SystemTime::now());
+        *self.paused_elapsed.lock().unwrap() = Duration::from_secs(0);
 
         Ok(())
     }
@@ -126,14 +142,28 @@ impl Player {
     }
 
     pub fn pause(&self) {
+        // Check if already paused
+        if self.is_paused() {
+            return;
+        }
+
+        // Get elapsed time before we pause
+        let elapsed = self.get_elapsed_duration();
+
+        // Now pause the sink and store elapsed time
         if let Some(sink) = self.sink.lock().unwrap().as_ref() {
+            *self.paused_elapsed.lock().unwrap() = elapsed;
             sink.pause();
         }
     }
 
     pub fn resume(&self) {
         if let Some(sink) = self.sink.lock().unwrap().as_ref() {
-            sink.play();
+            if sink.is_paused() {
+                // Resume from the stored position
+                *self.playback_start_time.lock().unwrap() = Some(SystemTime::now());
+                sink.play();
+            }
         }
     }
 
@@ -144,6 +174,8 @@ impl Player {
         *self.sink.lock().unwrap() = None;
         *self.current_track.lock().unwrap() = None;
         *self.current_metadata.lock().unwrap() = None;
+        *self.playback_start_time.lock().unwrap() = None;
+        *self.paused_elapsed.lock().unwrap() = Duration::from_secs(0);
     }
 
     pub fn is_playing(&self) -> bool {
@@ -179,6 +211,51 @@ impl Player {
 
     pub fn current_metadata(&self) -> Option<TrackMetadata> {
         self.current_metadata.lock().unwrap().clone()
+    }
+
+    fn get_elapsed_duration(&self) -> Duration {
+        // Lock all needed mutexes upfront in a consistent order to avoid deadlocks
+        let paused_elapsed = *self.paused_elapsed.lock().unwrap();
+        let playback_start_time = *self.playback_start_time.lock().unwrap();
+        let is_paused = self
+            .sink
+            .lock()
+            .unwrap()
+            .as_ref()
+            .map(|s| s.is_paused())
+            .unwrap_or(false);
+
+        if is_paused {
+            // When paused, return the stored elapsed time
+            paused_elapsed
+        } else if let Some(start_time) = playback_start_time {
+            // When playing, add the time since resume to the paused elapsed time
+            let current_elapsed = SystemTime::now()
+                .duration_since(start_time)
+                .unwrap_or(Duration::from_secs(0));
+            paused_elapsed + current_elapsed
+        } else {
+            Duration::from_secs(0)
+        }
+    }
+
+    pub fn get_position_and_progress(&self) -> (Duration, Option<f64>) {
+        let position = self.get_elapsed_duration();
+        let progress = if let Some(metadata) = self.current_metadata() {
+            if let Some(duration_secs) = metadata.duration_secs {
+                let position_secs = position.as_secs();
+                if duration_secs > 0 {
+                    Some((position_secs as f64 / duration_secs as f64).min(1.0))
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        (position, progress)
     }
 
     pub fn set_volume(&self, volume: f32) {
