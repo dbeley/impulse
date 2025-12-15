@@ -263,6 +263,33 @@ impl Player {
             sink.set_volume(volume);
         }
     }
+
+    pub fn seek_forward(&self, seconds: u64) {
+        if let Some(sink) = self.sink.lock().unwrap().as_ref() {
+            let target_position = self.get_elapsed_duration() + Duration::from_secs(seconds);
+            if let Err(e) = sink.try_seek(target_position) {
+                eprintln!("Failed to seek: {:?}", e);
+            } else {
+                // Update tracking after successful seek
+                *self.playback_start_time.lock().unwrap() = Some(SystemTime::now());
+                *self.paused_elapsed.lock().unwrap() = target_position;
+            }
+        }
+    }
+
+    pub fn seek_backward(&self, seconds: u64) {
+        if let Some(sink) = self.sink.lock().unwrap().as_ref() {
+            let current = self.get_elapsed_duration();
+            let target_position = current.saturating_sub(Duration::from_secs(seconds));
+            if let Err(e) = sink.try_seek(target_position) {
+                eprintln!("Failed to seek: {:?}", e);
+            } else {
+                // Update tracking after successful seek
+                *self.playback_start_time.lock().unwrap() = Some(SystemTime::now());
+                *self.paused_elapsed.lock().unwrap() = target_position;
+            }
+        }
+    }
 }
 
 // Custom source that wraps Symphonia decoder for use with rodio

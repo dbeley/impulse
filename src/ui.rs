@@ -88,6 +88,7 @@ pub struct App {
     status_message_time: Option<SystemTime>,
     image_picker: Arc<Mutex<Picker>>,
     album_art: Arc<Mutex<Option<Box<dyn StatefulProtocol>>>>,
+    last_album_art_track: Arc<Mutex<Option<PathBuf>>>,
     lastfm_scrobbler: LastfmScrobbler,
     track_play_time: Arc<Mutex<Option<SystemTime>>>,
     browser_state: ListState,
@@ -132,6 +133,7 @@ impl App {
             status_message_time: None,
             image_picker: Arc::new(Mutex::new(picker)),
             album_art: Arc::new(Mutex::new(None)),
+            last_album_art_track: Arc::new(Mutex::new(None)),
             lastfm_scrobbler,
             track_play_time: Arc::new(Mutex::new(None)),
             browser_state: ListState::default(),
@@ -271,6 +273,21 @@ impl App {
     }
 
     fn handle_now_playing_keys(&mut self, key: KeyEvent) -> Result<()> {
+        // Handle seek keys first (specific to now playing)
+        match key.code {
+            KeyCode::Left => {
+                self.player.seek_backward(5);
+                self.set_status(String::from("Seeked backward 5s"));
+                return Ok(());
+            }
+            KeyCode::Right => {
+                self.player.seek_forward(5);
+                self.set_status(String::from("Seeked forward 5s"));
+                return Ok(());
+            }
+            _ => {}
+        }
+
         // Allow queue navigation/manipulation and player controls in the combined view
         self.handle_queue_keys(key)?;
         self.handle_player_keys(key)?;
@@ -303,10 +320,11 @@ impl App {
             }
             KeyCode::Char('l') | KeyCode::Enter | KeyCode::Right => {
                 if let Some(track) = self.browser.enter_selected() {
+                    let was_empty = self.queue.is_empty();
                     self.queue.add(track.clone());
                     self.set_status(format!("Added to queue: {}", track.display()));
 
-                    if self.queue.len() == 1 && !self.player.is_playing() {
+                    if was_empty && !self.player.is_playing() {
                         if let Err(e) = self.player.play(track.clone()) {
                             self.set_status(format!("Error playing: {}", e));
                         } else {
@@ -1005,42 +1023,67 @@ impl App {
         f.render_widget(paragraph, chunks[0]);
 
         // Render album art in right section (45% of width)
-        if let Some(ref meta) = metadata {
-            if let Some(ref cover_data) = meta.cover_art {
-                // Try to load and display the album art
-                match image::load_from_memory(cover_data) {
-                    Ok(img) => {
-                        let mut picker = self.image_picker.lock().unwrap();
-                        let mut album_art = self.album_art.lock().unwrap();
+        let current_track = self.player.current_track();
 
-                        // Create or update the album art protocol
-                        *album_art = Some(picker.new_resize_protocol(img));
+        // Check if we need to reload album art (track changed)
+        let need_reload = {
+            let last_track = self.last_album_art_track.lock().unwrap();
+            *last_track != current_track
+        };
 
-                        if let Some(ref mut protocol) = *album_art {
-                            let image_widget = ratatui_image::StatefulImage::new(None);
-                            drop(picker); // Release lock before rendering
-                            f.render_stateful_widget(image_widget, chunks[1], protocol);
+        if need_reload {
+            // Track changed, reload album art
+            if let Some(ref meta) = metadata {
+                if let Some(ref cover_data) = meta.cover_art {
+                    // Try to load and display the album art
+                    match image::load_from_memory(cover_data) {
+                        Ok(img) => {
+                            let mut picker = self.image_picker.lock().unwrap();
+                            let mut album_art = self.album_art.lock().unwrap();
+
+                            // Create or update the album art protocol
+                            *album_art = Some(picker.new_resize_protocol(img));
+                        }
+                        Err(_) => {
+                            // Failed to decode album art
+                            *self.album_art.lock().unwrap() = None;
                         }
                     }
-                    Err(_) => {
-                        // Failed to decode album art
-                        let placeholder = Paragraph::new("Invalid Album Art")
-                            .block(Block::default().borders(Borders::ALL))
-                            .style(Style::default().fg(Color::Red));
-                        f.render_widget(placeholder, chunks[1]);
-                    }
+                } else {
+                    // No album art available
+                    *self.album_art.lock().unwrap() = None;
                 }
             } else {
-                // No album art - show placeholder
-                let placeholder = Paragraph::new("No Album Art")
-                    .block(Block::default().borders(Borders::ALL))
-                    .style(Style::default().fg(Color::DarkGray));
-                f.render_widget(placeholder, chunks[1]);
+                // No metadata available
+                *self.album_art.lock().unwrap() = None;
             }
+
+            // Update last loaded track
+            *self.last_album_art_track.lock().unwrap() = current_track.clone();
+        }
+
+        // Render the album art (whether cached or just loaded)
+        let mut album_art = self.album_art.lock().unwrap();
+        if let Some(ref mut protocol) = *album_art {
+            // Create a block with borders for the album art
+            let block = Block::default().borders(Borders::ALL).title("Album Art");
+            let inner_area = block.inner(chunks[1]);
+            f.render_widget(block, chunks[1]);
+
+            let image_widget = ratatui_image::StatefulImage::new(None);
+            f.render_stateful_widget(image_widget, inner_area, protocol);
         } else {
-            let placeholder = Paragraph::new("No Album Art")
-                .block(Block::default().borders(Borders::ALL))
-                .style(Style::default().fg(Color::DarkGray));
+            // Show appropriate placeholder
+            let (text, color) =
+                if metadata.is_some() && metadata.as_ref().unwrap().cover_art.is_some() {
+                    ("Invalid Album Art", Color::Red)
+                } else {
+                    ("No Album Art", Color::DarkGray)
+                };
+
+            let placeholder = Paragraph::new(text)
+                .block(Block::default().borders(Borders::ALL).title("Album Art"))
+                .style(Style::default().fg(color));
             f.render_widget(placeholder, chunks[1]);
         }
     }
