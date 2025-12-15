@@ -17,7 +17,7 @@
         pkgs = import nixpkgs {
           inherit system overlays;
         };
-        
+
         rustToolchain = pkgs.rust-bin.stable.latest.default.override {
           extensions = [ "rust-src" "rust-analyzer" ];
         };
@@ -39,12 +39,12 @@
         devInputs = with pkgs; [
           # Pre-commit tools
           prek
-          
+
           # Rust development tools
           cargo-watch
           cargo-edit
           cargo-outdated
-          
+
           # Formatters and linters
           rustfmt
           clippy
@@ -56,9 +56,9 @@
         packages.default = pkgs.rustPlatform.buildRustPackage {
           pname = "impulse";
           version = "0.1.0";
-          
+
           src = ./.;
-          
+
           cargoLock = {
             lockFile = ./Cargo.lock;
           };
@@ -78,7 +78,7 @@
         # Development shell
         devShells.default = pkgs.mkShell {
           buildInputs = nativeBuildInputs ++ buildInputs ++ devInputs;
-          
+
           shellHook = ''
             echo "Impulse development environment"
             echo "Available commands:"
@@ -91,7 +91,7 @@
             echo ""
             echo "Pre-commit hooks configured with prek"
           '';
-          
+
           # Set environment variables for ALSA
           ALSA_LIB_DIR = "${pkgs.alsa-lib}/lib";
           PKG_CONFIG_PATH = "${pkgs.alsa-lib}/lib/pkgconfig";
@@ -113,7 +113,7 @@
         {
           options.programs.impulse = {
             enable = mkEnableOption "Impulse music player";
-            
+
             package = mkOption {
               type = types.package;
               default = self.packages.${pkgs.system}.default;

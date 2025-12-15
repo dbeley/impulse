@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -140,6 +140,38 @@ impl PlaylistManager {
         Ok(())
     }
 
+    pub fn save_playlist(&mut self, name: &str, tracks: &[PathBuf]) -> Result<PathBuf> {
+        if tracks.is_empty() {
+            return Err(anyhow!("Cannot save an empty playlist"));
+        }
+
+        if !self.playlist_dir.exists() {
+            fs::create_dir_all(&self.playlist_dir).context(format!(
+                "Failed to create playlist directory: {:?}",
+                self.playlist_dir
+            ))?;
+        }
+
+        let filename = playlist_filename(name);
+        let path = self.playlist_dir.join(filename);
+
+        let display_name = if name.trim().is_empty() {
+            "playlist".to_string()
+        } else {
+            name.trim().to_string()
+        };
+
+        let playlist = Playlist {
+            name: display_name,
+            path: path.clone(),
+            tracks: tracks.to_vec(),
+        };
+
+        playlist.save()?;
+        self.load_playlists();
+        Ok(path)
+    }
+
     pub fn playlists(&self) -> &[Playlist] {
         &self.playlists
     }
@@ -157,4 +189,19 @@ impl PlaylistManager {
     pub fn get_playlist_mut(&mut self, index: usize) -> Option<&mut Playlist> {
         self.playlists.get_mut(index)
     }
+}
+
+fn playlist_filename(name: &str) -> String {
+    let trimmed = name.trim();
+    let mut base = if trimmed.is_empty() {
+        "playlist".to_string()
+    } else {
+        trimmed.replace(['/', '\\'], "_")
+    };
+
+    if !(base.ends_with(".m3u") || base.ends_with(".m3u8")) {
+        base.push_str(".m3u");
+    }
+
+    base
 }

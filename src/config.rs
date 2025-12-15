@@ -20,10 +20,13 @@ fn default_music_dir() -> PathBuf {
 }
 
 fn default_playlist_dir() -> PathBuf {
-    dirs::config_dir()
+    default_data_dir().join("playlists")
+}
+
+fn default_data_dir() -> PathBuf {
+    dirs::data_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join("impulse")
-        .join("playlists")
 }
 
 fn default_volume() -> f32 {

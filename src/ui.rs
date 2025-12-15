@@ -16,8 +16,9 @@ use ratatui::{
     Frame, Terminal,
 };
 use ratatui_image::{picker::Picker, protocol::StatefulProtocol};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 use walkdir::WalkDir;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -61,6 +62,15 @@ pub enum InputMode {
     Normal,
     Search,
     Command,
+    SearchResults,
+}
+
+struct SearchResult {
+    path: PathBuf,
+    folder: PathBuf,
+    name: String,
+    score: i64,
+    depth: usize,
 }
 
 pub struct App {
@@ -73,6 +83,8 @@ pub struct App {
     input_mode: InputMode,
     search_query: String,
     command_input: String,
+    search_results: Vec<SearchResult>,
+    search_result_selected: usize,
     queue_selected: usize,
     playlist_selected: usize,
     playlist_track_selected: usize,
@@ -105,6 +117,8 @@ impl App {
             input_mode: InputMode::Normal,
             search_query: String::new(),
             command_input: String::new(),
+            search_results: Vec::new(),
+            search_result_selected: 0,
             queue_selected: 0,
             playlist_selected: 0,
             playlist_track_selected: 0,
@@ -142,6 +156,7 @@ impl App {
             InputMode::Normal => self.handle_normal_mode(key)?,
             InputMode::Search => self.handle_search_mode(key)?,
             InputMode::Command => self.handle_command_mode(key)?,
+            InputMode::SearchResults => self.handle_search_results_keys(key)?,
         }
         Ok(())
     }
@@ -197,10 +212,10 @@ impl App {
                     }
                 }
             }
-            KeyCode::Char('n') => {
+            KeyCode::Char('n') | KeyCode::Char('>') => {
                 self.play_next();
             }
-            KeyCode::Char('P') => {
+            KeyCode::Char('P') | KeyCode::Char('<') => {
                 self.play_prev();
             }
             KeyCode::Char('s') => {
@@ -251,9 +266,7 @@ impl App {
                 }
             }
             KeyCode::Char('h') | KeyCode::Left => {
-                if let Some(parent) = self.browser.current_dir().parent() {
-                    self.browser = Browser::new(parent.to_path_buf());
-                }
+                self.browser.go_parent();
             }
             KeyCode::Char('a') => {
                 if let Some(entry) = self.browser.selected_entry() {
@@ -301,7 +314,7 @@ impl App {
                     }
                 }
             }
-            KeyCode::Char('d') => {
+            KeyCode::Char('d') | KeyCode::Delete | KeyCode::Backspace => {
                 if !self.queue.is_empty() {
                     self.queue.remove(self.queue_selected);
                     self.status_message = String::from("Removed from queue");
@@ -310,10 +323,34 @@ impl App {
                     }
                 }
             }
+            KeyCode::Char('K') => {
+                if self.queue_selected > 0 {
+                    self.queue.move_up(self.queue_selected);
+                    self.queue_selected -= 1;
+                    self.status_message = String::from("Moved track up");
+                }
+            }
+            KeyCode::Char('J') => {
+                if self.queue_selected + 1 < self.queue.len() {
+                    self.queue.move_down(self.queue_selected);
+                    self.queue_selected += 1;
+                    self.status_message = String::from("Moved track down");
+                }
+            }
             KeyCode::Char('c') => {
                 self.queue.clear();
                 self.queue_selected = 0;
                 self.status_message = String::from("Queue cleared");
+            }
+            KeyCode::Char('S') => {
+                if self.queue.is_empty() {
+                    self.status_message = String::from("Queue is empty - nothing to save");
+                } else {
+                    self.input_mode = InputMode::Command;
+                    self.command_input = String::from("save-queue ");
+                    self.status_message =
+                        String::from("Enter name to save queue as playlist (default folder)");
+                }
             }
             _ => {}
         }
@@ -368,8 +405,20 @@ impl App {
     fn handle_search_mode(&mut self, key: KeyEvent) -> Result<()> {
         match key.code {
             KeyCode::Enter => {
-                self.input_mode = InputMode::Normal;
-                self.perform_search();
+                let results = self.collect_search_results();
+                if results.is_empty() {
+                    self.status_message = format!("No match found for: {}", self.search_query);
+                    self.input_mode = InputMode::Normal;
+                } else {
+                    self.search_results = results;
+                    self.search_result_selected = 0;
+                    self.input_mode = InputMode::SearchResults;
+                    self.status_message = format!(
+                        "{} match(es) for '{}'",
+                        self.search_results.len(),
+                        self.search_query
+                    );
+                }
             }
             KeyCode::Esc => {
                 self.input_mode = InputMode::Normal;
@@ -407,13 +456,44 @@ impl App {
         Ok(())
     }
 
-    fn perform_search(&mut self) {
-        if self.search_query.is_empty() {
-            return;
+    fn handle_search_results_keys(&mut self, key: KeyEvent) -> Result<()> {
+        match key.code {
+            KeyCode::Char('j') | KeyCode::Down => {
+                if !self.search_results.is_empty() {
+                    self.search_result_selected =
+                        (self.search_result_selected + 1).min(self.search_results.len() - 1);
+                }
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                self.search_result_selected = self.search_result_selected.saturating_sub(1);
+            }
+            KeyCode::Enter => {
+                if let Some(result) = self.search_results.get(self.search_result_selected) {
+                    self.browser.navigate_to(result.folder.clone());
+                    self.browser.select_entry_by_path(&result.path);
+                    self.status_message = format!("Found track in: {}", result.folder.display());
+                }
+                self.input_mode = InputMode::Normal;
+                self.clear_search_results();
+            }
+            KeyCode::Esc => {
+                self.input_mode = InputMode::Normal;
+                self.clear_search_results();
+                self.status_message = String::from("Search canceled");
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    fn collect_search_results(&self) -> Vec<SearchResult> {
+        let query = self.search_query.trim();
+        if query.is_empty() {
+            return Vec::new();
         }
 
         let matcher = SkimMatcherV2::default();
-        let mut best_match: Option<(i64, usize, bool, std::path::PathBuf)> = None;
+        let mut results = Vec::new();
 
         for entry in WalkDir::new(self.browser.current_dir())
             .follow_links(true)
@@ -421,70 +501,44 @@ impl App {
             .filter_map(|e| e.ok())
         {
             let path = entry.path();
-            let (name_opt, is_dir) = if entry.file_type().is_dir() {
-                (path.file_name().and_then(|n| n.to_str()), true)
-            } else if is_audio_file(path) {
-                (
-                    path.file_stem()
-                        .or_else(|| path.file_name())
-                        .and_then(|n| n.to_str()),
-                    false,
-                )
-            } else {
+            if !path.is_file() || !is_audio_file(path) {
                 continue;
-            };
-
-            let Some(name) = name_opt else { continue };
-
-            if let Some(score) = matcher.fuzzy_match(name, &self.search_query) {
-                let depth = entry.depth();
-                match best_match {
-                    None => best_match = Some((score, depth, is_dir, path.to_path_buf())),
-                    Some((best_score, best_depth, _, _))
-                        if score > best_score || (score == best_score && depth < best_depth) =>
-                    {
-                        best_match = Some((score, depth, is_dir, path.to_path_buf()));
-                    }
-                    _ => {}
-                }
             }
-        }
 
-        if let Some((_score, _depth, is_dir, path)) = best_match {
-            if is_dir {
-                self.browser.navigate_to(path.clone());
-                let dir_name = path
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .map(|n| n.to_string())
-                    .unwrap_or_else(|| path.to_string_lossy().into_owned());
-                self.status_message = format!("Found directory: {}", dir_name);
-            } else {
-                let parent = path
+            let name = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("")
+                .to_string();
+
+            if let Some(score) = matcher.fuzzy_match(&name, query) {
+                let folder = path
                     .parent()
                     .map(|p| p.to_path_buf())
                     .unwrap_or_else(|| self.browser.current_dir().to_path_buf());
-                self.browser.navigate_to(parent.clone());
-
-                if let Some(index) = self
-                    .browser
-                    .entries()
-                    .iter()
-                    .position(|entry| entry.path() == path)
-                {
-                    self.browser.select_index(index);
-                }
-
-                let album_name = parent
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .map(|n| n.to_string())
-                    .unwrap_or_else(|| parent.to_string_lossy().into_owned());
-                self.status_message = format!("Found track in: {}", album_name);
+                results.push(SearchResult {
+                    path: path.to_path_buf(),
+                    folder,
+                    name,
+                    score,
+                    depth: entry.depth(),
+                });
             }
-        } else {
-            self.status_message = format!("No match found for: {}", self.search_query);
         }
+
+        results.sort_by(|a, b| {
+            b.score
+                .cmp(&a.score)
+                .then(a.depth.cmp(&b.depth))
+                .then(a.name.cmp(&b.name))
+        });
+
+        const MAX_RESULTS: usize = 30;
+        if results.len() > MAX_RESULTS {
+            results.truncate(MAX_RESULTS);
+        }
+
+        results
     }
 
     fn execute_command(&mut self) -> Result<()> {
@@ -502,6 +556,14 @@ impl App {
                 self.config.save()?;
                 self.status_message = String::from("Configuration saved");
             }
+            "save-queue" | "savequeue" => {
+                let name = if parts.len() > 1 {
+                    Some(parts[1..].join(" "))
+                } else {
+                    None
+                };
+                self.save_queue_as_playlist(name.as_deref())?;
+            }
             "vol" | "volume" => {
                 if parts.len() > 1 {
                     if let Ok(vol) = parts[1].parse::<f32>() {
@@ -518,6 +580,40 @@ impl App {
 
         self.command_input.clear();
         Ok(())
+    }
+
+    fn clear_search_results(&mut self) {
+        self.search_results.clear();
+        self.search_result_selected = 0;
+    }
+
+    fn save_queue_as_playlist(&mut self, name: Option<&str>) -> Result<()> {
+        if self.queue.is_empty() {
+            self.status_message = String::from("Queue is empty - nothing to save");
+            return Ok(());
+        }
+
+        let playlist_name = name
+            .map(|n| n.trim())
+            .filter(|n| !n.is_empty())
+            .map(|n| n.to_string())
+            .unwrap_or_else(Self::default_queue_playlist_name);
+
+        let path = self
+            .playlist_manager
+            .save_playlist(&playlist_name, self.queue.tracks())?;
+
+        self.status_message = format!("Queue saved as '{}' at {}", playlist_name, path.display());
+
+        Ok(())
+    }
+
+    fn default_queue_playlist_name() -> String {
+        let timestamp = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap_or_else(|_| Duration::from_secs(0))
+            .as_secs();
+        format!("queue-{timestamp}")
     }
 
     fn play_next(&mut self) {
@@ -552,6 +648,9 @@ impl App {
 
         self.draw_tabs(f, chunks[0]);
         self.draw_content(f, chunks[1]);
+        if matches!(self.input_mode, InputMode::SearchResults) {
+            self.draw_search_overlay(f);
+        }
         self.draw_status(f, chunks[2]);
     }
 
@@ -869,11 +968,42 @@ impl App {
         f.render_widget(list, area);
     }
 
+    fn draw_search_overlay(&self, f: &mut Frame) {
+        let area = centered_rect(60, 50, f.size());
+        let items: Vec<ListItem> = self
+            .search_results
+            .iter()
+            .enumerate()
+            .map(|(i, result)| {
+                let mut style = Style::default();
+                if i == self.search_result_selected {
+                    style = style.fg(Color::Yellow).add_modifier(Modifier::BOLD);
+                }
+
+                let content = format!("{} — {}", result.name, result.folder.display());
+                ListItem::new(content).style(style)
+            })
+            .collect();
+
+        let list = List::new(items).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("Search Results"),
+        );
+
+        f.render_widget(list, area);
+    }
+
     fn draw_status(&self, f: &mut Frame, area: Rect) {
         let status_text = match self.input_mode {
             InputMode::Normal => self.status_message.clone(),
             InputMode::Search => format!("Search: {}", self.search_query),
             InputMode::Command => format!(":{}", self.command_input),
+            InputMode::SearchResults => format!(
+                "Search results: {}/{} (↑/↓ Navigate, Enter open, Esc cancel)",
+                self.search_result_selected + 1,
+                self.search_results.len()
+            ),
         };
 
         let paragraph = Paragraph::new(status_text)
@@ -881,4 +1011,24 @@ impl App {
 
         f.render_widget(paragraph, area);
     }
+}
+
+fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
+    let vertical = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Percentage((100 - percent_y) / 2),
+            Constraint::Percentage(percent_y),
+            Constraint::Percentage((100 - percent_y) / 2),
+        ])
+        .split(r);
+
+    Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage((100 - percent_x) / 2),
+            Constraint::Percentage(percent_x),
+            Constraint::Percentage((100 - percent_x) / 2),
+        ])
+        .split(vertical[1])[1]
 }

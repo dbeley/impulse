@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
@@ -40,6 +41,7 @@ pub struct Browser {
     current_dir: PathBuf,
     entries: Vec<FileEntry>,
     selected: usize,
+    last_selected: HashMap<PathBuf, usize>,
 }
 
 impl Browser {
@@ -48,6 +50,7 @@ impl Browser {
             current_dir: path,
             entries: Vec::new(),
             selected: 0,
+            last_selected: HashMap::new(),
         };
         browser.load_entries();
         browser
@@ -91,18 +94,34 @@ impl Browser {
             );
         }
 
-        self.selected = 0;
+        let preferred = self
+            .last_selected
+            .get(&self.current_dir)
+            .copied()
+            .unwrap_or(0);
+
+        self.selected = if self.entries.is_empty() {
+            0
+        } else if preferred >= self.entries.len() {
+            self.entries.len() - 1
+        } else {
+            preferred
+        };
     }
 
     pub fn enter_selected(&mut self) -> Option<PathBuf> {
-        if let Some(entry) = self.entries.get(self.selected) {
+        if let Some(entry) = self.entries.get(self.selected).cloned() {
             match entry {
                 FileEntry::Directory(path) | FileEntry::ParentDirectory(path) => {
+                    self.remember_selection();
                     self.current_dir = path.clone();
                     self.load_entries();
                     None
                 }
-                FileEntry::AudioFile(path) => Some(path.clone()),
+                FileEntry::AudioFile(path) => {
+                    self.remember_selection();
+                    Some(path)
+                }
             }
         } else {
             None
@@ -119,7 +138,16 @@ impl Browser {
 
     pub fn navigate_to(&mut self, path: PathBuf) {
         if path.is_dir() {
+            self.remember_selection();
             self.current_dir = path;
+            self.load_entries();
+        }
+    }
+
+    pub fn go_parent(&mut self) {
+        if let Some(parent) = self.current_dir.parent().map(|p| p.to_path_buf()) {
+            self.remember_selection();
+            self.current_dir = parent;
             self.load_entries();
         }
     }
@@ -152,10 +180,20 @@ impl Browser {
         }
     }
 
-    pub fn select_index(&mut self, index: usize) {
-        if index < self.entries.len() {
-            self.selected = index;
+    pub fn select_entry_by_path(&mut self, target: &Path) {
+        if let Some((idx, _)) = self
+            .entries
+            .iter()
+            .enumerate()
+            .find(|(_, entry)| entry.path() == target)
+        {
+            self.selected = idx;
         }
+    }
+
+    fn remember_selection(&mut self) {
+        self.last_selected
+            .insert(self.current_dir.clone(), self.selected);
     }
 
     pub fn get_all_audio_files(&self) -> Vec<PathBuf> {

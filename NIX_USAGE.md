@@ -49,7 +49,7 @@ Add to your `flake.nix`:
 ```nix
 {
   inputs.impulse.url = "github:dbeley/impulse";
-  
+
   outputs = { self, nixpkgs, impulse, ... }: {
     nixosConfigurations.yourhostname = nixpkgs.lib.nixosSystem {
       modules = [
@@ -101,7 +101,7 @@ You can override the package in your own flake:
 ```nix
 {
   inputs.impulse.url = "github:dbeley/impulse";
-  
+
   outputs = { self, nixpkgs, impulse }: {
     packages.x86_64-linux.default = impulse.packages.x86_64-linux.default.override {
       # Your customizations here

@@ -60,6 +60,7 @@ impulse
 ```
 
 On first run, a default configuration file will be created at `~/.config/impulse/config.toml`.
+Playlists (including saved queues) default to `~/.local/share/impulse/playlists`.
 
 ## Keybindings
 
@@ -70,6 +71,7 @@ On first run, a default configuration file will be created at `~/.config/impulse
 - `Space` - Play/Pause current track
 - `n` - Next track
 - `P` - Previous track
+- `>` / `<` - Next/previous track (alternative to `n`/`P`)
 - `s` - Stop playback
 - `/` - Start search mode
 - `:` - Command mode
@@ -90,8 +92,17 @@ On first run, a default configuration file will be created at `~/.config/impulse
 - `g` - Go to first track
 - `G` - Go to last track
 - `Enter` - Jump to selected track
-- `d` - Remove selected track
+- `d` / `Backspace` / `Delete` - Remove selected track
+- `K` - Move selected track up
+- `J` - Move selected track down
+- `S` - Save queue as a playlist in the default folder
 - `c` - Clear queue
+
+### Search
+- `/` - Enter search mode, type a query, and press Enter to show an overlay of matching audio files (each entry shows the file name and its folder).
+- `j` / `↓` / `k` / `↑` - Navigate search results in the overlay.
+- `Enter` - Browse to the highlighted file’s folder and select it in the browser.
+- `Esc` - Close the search overlay without changing folders.
 
 ### Player Tab
 - `+` / `=` - Increase volume
@@ -109,7 +120,7 @@ Edit `~/.config/impulse/config.toml`:
 
 ```toml
 music_dir = "/home/user/Music"
-playlist_dir = "/home/user/.config/impulse/playlists"
+playlist_dir = "/home/user/.local/share/impulse/playlists"
 volume = 0.5
 ```
 
@@ -120,6 +131,7 @@ See `config.toml.example` for a complete example configuration.
 Type `:` to enter command mode. Available commands:
 - `:quit` or `:q` - Quit the application
 - `:save` - Save current configuration
+- `:save-queue <name>` - Save the current queue as a playlist (stored in the default playlist folder)
 - `:vol <0-100>` or `:volume <0-100>` - Set volume (e.g., `:vol 75`)
 
 ## Supported Formats

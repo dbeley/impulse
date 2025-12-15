@@ -104,6 +104,36 @@ impl Queue {
     pub fn len(&self) -> usize {
         self.tracks.len()
     }
+
+    pub fn move_up(&mut self, index: usize) {
+        if index == 0 || index >= self.tracks.len() {
+            return;
+        }
+
+        self.tracks.swap(index, index - 1);
+        if let Some(current) = self.current_index {
+            if current == index {
+                self.current_index = Some(index - 1);
+            } else if current + 1 == index {
+                self.current_index = Some(index);
+            }
+        }
+    }
+
+    pub fn move_down(&mut self, index: usize) {
+        if index + 1 >= self.tracks.len() {
+            return;
+        }
+
+        self.tracks.swap(index, index + 1);
+        if let Some(current) = self.current_index {
+            if current == index {
+                self.current_index = Some(index + 1);
+            } else if current == index + 1 {
+                self.current_index = Some(index);
+            }
+        }
+    }
 }
 
 impl Default for Queue {
