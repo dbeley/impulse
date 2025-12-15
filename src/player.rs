@@ -133,10 +133,20 @@ impl Player {
     }
 
     pub fn pause(&self) {
-        if let Some(sink) = self.sink.lock().unwrap().as_ref() {
-            if !sink.is_paused() {
-                // Store the elapsed time when pausing
-                let elapsed = self.get_elapsed_duration();
+        // Check if paused and get elapsed time in a way that maintains consistent lock order
+        let is_currently_paused = self.sink
+            .lock()
+            .unwrap()
+            .as_ref()
+            .map(|s| s.is_paused())
+            .unwrap_or(false);
+        
+        if !is_currently_paused {
+            // Get elapsed time before we pause
+            let elapsed = self.get_elapsed_duration();
+            
+            // Now pause the sink and store elapsed time
+            if let Some(sink) = self.sink.lock().unwrap().as_ref() {
                 *self.paused_elapsed.lock().unwrap() = elapsed;
                 sink.pause();
             }
