@@ -200,34 +200,47 @@ impl Player {
     }
 
     fn get_elapsed_duration(&self) -> Duration {
-        if self.is_paused() {
+        // Lock all needed mutexes upfront in a consistent order to avoid deadlocks
+        let paused_elapsed = *self.paused_elapsed.lock().unwrap();
+        let playback_start_time = *self.playback_start_time.lock().unwrap();
+        let is_paused = self.sink
+            .lock()
+            .unwrap()
+            .as_ref()
+            .map(|s| s.is_paused())
+            .unwrap_or(false);
+
+        if is_paused {
             // When paused, return the stored elapsed time
-            *self.paused_elapsed.lock().unwrap()
-        } else if let Some(start_time) = *self.playback_start_time.lock().unwrap() {
+            paused_elapsed
+        } else if let Some(start_time) = playback_start_time {
             // When playing, add the time since resume to the paused elapsed time
             let current_elapsed = SystemTime::now()
                 .duration_since(start_time)
                 .unwrap_or(Duration::from_secs(0));
-            *self.paused_elapsed.lock().unwrap() + current_elapsed
+            paused_elapsed + current_elapsed
         } else {
             Duration::from_secs(0)
         }
     }
 
-    pub fn get_position(&self) -> Duration {
-        self.get_elapsed_duration()
-    }
-
-    pub fn get_progress(&self) -> Option<f64> {
-        if let Some(metadata) = self.current_metadata() {
+    pub fn get_position_and_progress(&self) -> (Duration, Option<f64>) {
+        let position = self.get_elapsed_duration();
+        let progress = if let Some(metadata) = self.current_metadata() {
             if let Some(duration_secs) = metadata.duration_secs {
-                let position_secs = self.get_position().as_secs();
+                let position_secs = position.as_secs();
                 if duration_secs > 0 {
-                    return Some((position_secs as f64 / duration_secs as f64).min(1.0));
+                    Some((position_secs as f64 / duration_secs as f64).min(1.0))
+                } else {
+                    None
                 }
+            } else {
+                None
             }
-        }
-        None
+        } else {
+            None
+        };
+        (position, progress)
     }
 
     pub fn set_volume(&self, volume: f32) {

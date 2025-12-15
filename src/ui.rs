@@ -1074,8 +1074,9 @@ impl App {
             "⏹"
         };
 
-        let position = self.player.get_position();
-        let progress = self.player.get_progress().unwrap_or(0.0);
+        // Get position and progress in a single call to minimize mutex locks
+        let (position, progress) = self.player.get_position_and_progress();
+        let progress = progress.unwrap_or(0.0);
         
         let position_secs = position.as_secs();
         let position_str = format!("{}:{:02}", position_secs / 60, position_secs % 60);
