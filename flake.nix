@@ -18,12 +18,7 @@
           inherit system overlays;
         };
 
-        rustToolchain = pkgs.rust-bin.stable.latest.default.override {
-          extensions = [ "rust-src" "rust-analyzer" ];
-        };
-
         nativeBuildInputs = with pkgs; [
-          rustToolchain
           pkg-config
           cmake
         ];
@@ -34,30 +29,29 @@
           openssl
         ];
 
+        rustToolchain = pkgs.rust-bin.stable.latest.default.override {
+          extensions = [ "rust-src" "rust-analyzer" ];
+        };
+
         devInputs = with pkgs; [
+          rustToolchain
           prek
           cargo-watch
           cargo-edit
           cargo-outdated
-          rustfmt
-          clippy
         ];
 
       in
       {
         packages.default = pkgs.rustPlatform.buildRustPackage {
+          inherit nativeBuildInputs buildInputs;
+
           pname = "impulse";
           version = "0.1.0";
-
           src = ./.;
-
           cargoLock = {
             lockFile = ./Cargo.lock;
           };
-
-          nativeBuildInputs = with pkgs; [ pkg-config cmake ];
-          buildInputs = buildInputs;
-
           meta = with pkgs.lib; {
             description = "Minimalist music player with minimal dependencies, focusing on speed and a keyboard-centric TUI";
             homepage = "https://github.com/dbeley/impulse";
@@ -68,7 +62,8 @@
         };
 
         devShells.default = pkgs.mkShell {
-          buildInputs = nativeBuildInputs ++ buildInputs ++ devInputs;
+          inputsFrom = [ self.packages.${system}.default ];
+          buildInputs = devInputs;
 
           shellHook = ''
             echo "Impulse development environment"
