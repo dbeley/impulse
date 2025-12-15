@@ -802,13 +802,13 @@ impl App {
     fn draw_player(&mut self, f: &mut Frame, area: Rect) {
         let metadata = self.player.current_metadata();
 
-        // Split area: left for metadata, right for album art (inverted from before)
+        // Split area with percentage-based layout: 55% for track metadata (left), 45% for album art (right)
         let chunks = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
             .split(area);
 
-        // Draw metadata first (left side)
+        // Render track metadata in left section (55% of width)
         let mut text = vec![];
 
         if let Some(ref meta) = metadata {
@@ -949,7 +949,7 @@ impl App {
 
         f.render_widget(paragraph, chunks[0]);
 
-        // Draw album art on right side
+        // Render album art in right section (45% of width)
         if let Some(ref meta) = metadata {
             if let Some(ref cover_data) = meta.cover_art {
                 // Try to load and display the album art
