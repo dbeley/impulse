@@ -178,3 +178,258 @@ impl Default for Queue {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_new_queue_is_empty() {
+        let queue = Queue::new();
+        assert!(queue.is_empty());
+        assert_eq!(queue.len(), 0);
+        assert!(queue.current().is_none());
+        assert!(queue.current_index().is_none());
+    }
+
+    #[test]
+    fn test_add_single_track() {
+        let mut queue = Queue::new();
+        let track = PathBuf::from("/music/track1.mp3");
+        queue.add(track.clone());
+
+        assert!(!queue.is_empty());
+        assert_eq!(queue.len(), 1);
+        assert_eq!(queue.current(), Some(&track));
+        assert_eq!(queue.current_index(), Some(0));
+    }
+
+    #[test]
+    fn test_add_multiple_tracks() {
+        let mut queue = Queue::new();
+        let tracks = vec![
+            PathBuf::from("/music/track1.mp3"),
+            PathBuf::from("/music/track2.mp3"),
+            PathBuf::from("/music/track3.mp3"),
+        ];
+        queue.add_multiple(tracks.clone());
+
+        assert_eq!(queue.len(), 3);
+        assert_eq!(queue.current(), Some(&tracks[0]));
+        assert_eq!(queue.tracks(), &tracks[..]);
+    }
+
+    #[test]
+    fn test_next_track() {
+        let mut queue = Queue::new();
+        let tracks = vec![
+            PathBuf::from("/music/track1.mp3"),
+            PathBuf::from("/music/track2.mp3"),
+            PathBuf::from("/music/track3.mp3"),
+        ];
+        queue.add_multiple(tracks.clone());
+
+        assert_eq!(queue.current(), Some(&tracks[0]));
+        assert_eq!(queue.next(), Some(&tracks[1]));
+        assert_eq!(queue.current(), Some(&tracks[1]));
+        assert_eq!(queue.next(), Some(&tracks[2]));
+        assert_eq!(queue.current(), Some(&tracks[2]));
+        assert_eq!(queue.next(), None);
+        assert_eq!(queue.current(), Some(&tracks[2]));
+    }
+
+    #[test]
+    fn test_prev_track() {
+        let mut queue = Queue::new();
+        let tracks = vec![
+            PathBuf::from("/music/track1.mp3"),
+            PathBuf::from("/music/track2.mp3"),
+            PathBuf::from("/music/track3.mp3"),
+        ];
+        queue.add_multiple(tracks.clone());
+        queue.jump_to(2);
+
+        assert_eq!(queue.current(), Some(&tracks[2]));
+        assert_eq!(queue.prev(), Some(&tracks[1]));
+        assert_eq!(queue.current(), Some(&tracks[1]));
+        assert_eq!(queue.prev(), Some(&tracks[0]));
+        assert_eq!(queue.current(), Some(&tracks[0]));
+        assert_eq!(queue.prev(), None);
+        assert_eq!(queue.current(), Some(&tracks[0]));
+    }
+
+    #[test]
+    fn test_jump_to() {
+        let mut queue = Queue::new();
+        let tracks = vec![
+            PathBuf::from("/music/track1.mp3"),
+            PathBuf::from("/music/track2.mp3"),
+            PathBuf::from("/music/track3.mp3"),
+        ];
+        queue.add_multiple(tracks.clone());
+
+        assert_eq!(queue.jump_to(1), Some(&tracks[1]));
+        assert_eq!(queue.current_index(), Some(1));
+        assert_eq!(queue.jump_to(0), Some(&tracks[0]));
+        assert_eq!(queue.current_index(), Some(0));
+        assert_eq!(queue.jump_to(2), Some(&tracks[2]));
+        assert_eq!(queue.current_index(), Some(2));
+        assert_eq!(queue.jump_to(10), None);
+        assert_eq!(queue.current_index(), Some(2));
+    }
+
+    #[test]
+    fn test_remove_track() {
+        let mut queue = Queue::new();
+        let tracks = vec![
+            PathBuf::from("/music/track1.mp3"),
+            PathBuf::from("/music/track2.mp3"),
+            PathBuf::from("/music/track3.mp3"),
+        ];
+        queue.add_multiple(tracks.clone());
+
+        queue.remove(1);
+        assert_eq!(queue.len(), 2);
+        assert_eq!(queue.tracks()[0], tracks[0]);
+        assert_eq!(queue.tracks()[1], tracks[2]);
+    }
+
+    #[test]
+    fn test_remove_current_track() {
+        let mut queue = Queue::new();
+        let tracks = vec![
+            PathBuf::from("/music/track1.mp3"),
+            PathBuf::from("/music/track2.mp3"),
+            PathBuf::from("/music/track3.mp3"),
+        ];
+        queue.add_multiple(tracks.clone());
+        queue.jump_to(1);
+
+        queue.remove(1);
+        assert_eq!(queue.len(), 2);
+        assert_eq!(queue.current_index(), Some(1));
+        assert_eq!(queue.current(), Some(&tracks[2]));
+    }
+
+    #[test]
+    fn test_remove_last_track_when_current() {
+        let mut queue = Queue::new();
+        let tracks = vec![
+            PathBuf::from("/music/track1.mp3"),
+            PathBuf::from("/music/track2.mp3"),
+        ];
+        queue.add_multiple(tracks.clone());
+        queue.jump_to(1);
+
+        queue.remove(1);
+        assert_eq!(queue.len(), 1);
+        assert_eq!(queue.current_index(), Some(0));
+        assert_eq!(queue.current(), Some(&tracks[0]));
+    }
+
+    #[test]
+    fn test_clear() {
+        let mut queue = Queue::new();
+        let tracks = vec![
+            PathBuf::from("/music/track1.mp3"),
+            PathBuf::from("/music/track2.mp3"),
+        ];
+        queue.add_multiple(tracks);
+
+        queue.clear();
+        assert!(queue.is_empty());
+        assert_eq!(queue.len(), 0);
+        assert!(queue.current().is_none());
+        assert!(queue.current_index().is_none());
+    }
+
+    #[test]
+    fn test_move_up() {
+        let mut queue = Queue::new();
+        let tracks = vec![
+            PathBuf::from("/music/track1.mp3"),
+            PathBuf::from("/music/track2.mp3"),
+            PathBuf::from("/music/track3.mp3"),
+        ];
+        queue.add_multiple(tracks.clone());
+
+        queue.move_up(1);
+        assert_eq!(queue.tracks()[0], tracks[1]);
+        assert_eq!(queue.tracks()[1], tracks[0]);
+        assert_eq!(queue.tracks()[2], tracks[2]);
+    }
+
+    #[test]
+    fn test_move_up_first_item_does_nothing() {
+        let mut queue = Queue::new();
+        let tracks = vec![
+            PathBuf::from("/music/track1.mp3"),
+            PathBuf::from("/music/track2.mp3"),
+        ];
+        queue.add_multiple(tracks.clone());
+
+        queue.move_up(0);
+        assert_eq!(queue.tracks()[0], tracks[0]);
+        assert_eq!(queue.tracks()[1], tracks[1]);
+    }
+
+    #[test]
+    fn test_move_down() {
+        let mut queue = Queue::new();
+        let tracks = vec![
+            PathBuf::from("/music/track1.mp3"),
+            PathBuf::from("/music/track2.mp3"),
+            PathBuf::from("/music/track3.mp3"),
+        ];
+        queue.add_multiple(tracks.clone());
+
+        queue.move_down(0);
+        assert_eq!(queue.tracks()[0], tracks[1]);
+        assert_eq!(queue.tracks()[1], tracks[0]);
+        assert_eq!(queue.tracks()[2], tracks[2]);
+    }
+
+    #[test]
+    fn test_move_down_last_item_does_nothing() {
+        let mut queue = Queue::new();
+        let tracks = vec![
+            PathBuf::from("/music/track1.mp3"),
+            PathBuf::from("/music/track2.mp3"),
+        ];
+        queue.add_multiple(tracks.clone());
+
+        queue.move_down(1);
+        assert_eq!(queue.tracks()[0], tracks[0]);
+        assert_eq!(queue.tracks()[1], tracks[1]);
+    }
+
+    #[test]
+    fn test_move_up_updates_current_index() {
+        let mut queue = Queue::new();
+        let tracks = vec![
+            PathBuf::from("/music/track1.mp3"),
+            PathBuf::from("/music/track2.mp3"),
+            PathBuf::from("/music/track3.mp3"),
+        ];
+        queue.add_multiple(tracks);
+        queue.jump_to(1);
+
+        queue.move_up(1);
+        assert_eq!(queue.current_index(), Some(0));
+    }
+
+    #[test]
+    fn test_move_down_updates_current_index() {
+        let mut queue = Queue::new();
+        let tracks = vec![
+            PathBuf::from("/music/track1.mp3"),
+            PathBuf::from("/music/track2.mp3"),
+            PathBuf::from("/music/track3.mp3"),
+        ];
+        queue.add_multiple(tracks);
+        queue.jump_to(1);
+
+        queue.move_down(1);
+        assert_eq!(queue.current_index(), Some(2));
+    }
+}

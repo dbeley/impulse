@@ -205,3 +205,120 @@ fn playlist_filename(name: &str) -> String {
 
     base
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn test_playlist_new() {
+        let playlist = Playlist::new("Test".to_string(), PathBuf::from("/test/playlist.m3u"));
+        assert_eq!(playlist.name, "Test");
+        assert_eq!(playlist.path, PathBuf::from("/test/playlist.m3u"));
+        assert!(playlist.tracks.is_empty());
+    }
+
+    #[test]
+    fn test_playlist_add_track() {
+        let mut playlist = Playlist::new("Test".to_string(), PathBuf::from("/test/playlist.m3u"));
+        playlist.add_track(PathBuf::from("/music/track1.mp3"));
+        playlist.add_track(PathBuf::from("/music/track2.mp3"));
+
+        assert_eq!(playlist.tracks.len(), 2);
+        assert_eq!(playlist.tracks[0], PathBuf::from("/music/track1.mp3"));
+        assert_eq!(playlist.tracks[1], PathBuf::from("/music/track2.mp3"));
+    }
+
+    #[test]
+    fn test_playlist_remove_track() {
+        let mut playlist = Playlist::new("Test".to_string(), PathBuf::from("/test/playlist.m3u"));
+        playlist.add_track(PathBuf::from("/music/track1.mp3"));
+        playlist.add_track(PathBuf::from("/music/track2.mp3"));
+        playlist.add_track(PathBuf::from("/music/track3.mp3"));
+
+        playlist.remove_track(1);
+        assert_eq!(playlist.tracks.len(), 2);
+        assert_eq!(playlist.tracks[0], PathBuf::from("/music/track1.mp3"));
+        assert_eq!(playlist.tracks[1], PathBuf::from("/music/track3.mp3"));
+    }
+
+    #[test]
+    fn test_playlist_remove_track_out_of_bounds() {
+        let mut playlist = Playlist::new("Test".to_string(), PathBuf::from("/test/playlist.m3u"));
+        playlist.add_track(PathBuf::from("/music/track1.mp3"));
+
+        playlist.remove_track(5);
+        assert_eq!(playlist.tracks.len(), 1);
+    }
+
+    #[test]
+    fn test_playlist_filename_basic() {
+        assert_eq!(playlist_filename("my playlist"), "my playlist.m3u");
+        assert_eq!(playlist_filename("test"), "test.m3u");
+    }
+
+    #[test]
+    fn test_playlist_filename_with_slashes() {
+        assert_eq!(playlist_filename("my/playlist"), "my_playlist.m3u");
+        assert_eq!(playlist_filename("my\\playlist"), "my_playlist.m3u");
+    }
+
+    #[test]
+    fn test_playlist_filename_empty() {
+        assert_eq!(playlist_filename(""), "playlist.m3u");
+        assert_eq!(playlist_filename("   "), "playlist.m3u");
+    }
+
+    #[test]
+    fn test_playlist_filename_already_has_extension() {
+        assert_eq!(playlist_filename("test.m3u"), "test.m3u");
+        assert_eq!(playlist_filename("test.m3u8"), "test.m3u8");
+    }
+
+    #[test]
+    fn test_playlist_save_and_load() {
+        let temp_dir = std::env::temp_dir();
+        let temp_file = temp_dir.join("test_playlist.m3u");
+
+        // Clean up if exists
+        let _ = fs::remove_file(&temp_file);
+
+        let mut playlist = Playlist::new("Test".to_string(), temp_file.clone());
+        playlist.add_track(PathBuf::from("/music/track1.mp3"));
+        playlist.add_track(PathBuf::from("/music/track2.mp3"));
+
+        // Save
+        playlist.save().unwrap();
+
+        // Load
+        let loaded = Playlist::load(&temp_file).unwrap();
+        assert_eq!(loaded.name, "test_playlist");
+        assert_eq!(loaded.tracks.len(), 2);
+        assert_eq!(loaded.tracks[0], PathBuf::from("/music/track1.mp3"));
+        assert_eq!(loaded.tracks[1], PathBuf::from("/music/track2.mp3"));
+
+        // Clean up
+        let _ = fs::remove_file(&temp_file);
+    }
+
+    #[test]
+    fn test_playlist_load_ignores_comments() {
+        let temp_dir = std::env::temp_dir();
+        let temp_file = temp_dir.join("test_playlist_comments.m3u");
+
+        // Clean up if exists
+        let _ = fs::remove_file(&temp_file);
+
+        let content = "#EXTM3U\n# This is a comment\n/music/track1.mp3\n  \n/music/track2.mp3\n";
+        fs::write(&temp_file, content).unwrap();
+
+        let loaded = Playlist::load(&temp_file).unwrap();
+        assert_eq!(loaded.tracks.len(), 2);
+        assert_eq!(loaded.tracks[0], PathBuf::from("/music/track1.mp3"));
+        assert_eq!(loaded.tracks[1], PathBuf::from("/music/track2.mp3"));
+
+        // Clean up
+        let _ = fs::remove_file(&temp_file);
+    }
+}
