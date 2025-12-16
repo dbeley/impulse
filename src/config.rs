@@ -114,3 +114,80 @@ impl Config {
             .join("impulse.conf")
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_default_config() {
+        let config = Config::default();
+        assert_eq!(config.volume, 0.5);
+        assert!(config.lastfm.is_none());
+        // The paths will vary based on the system, but they should exist
+        assert!(!config.music_dir.as_os_str().is_empty());
+        assert!(!config.playlist_dir.as_os_str().is_empty());
+    }
+
+    #[test]
+    fn test_config_serialization() {
+        let config = Config {
+            music_dir: PathBuf::from("/test/music"),
+            playlist_dir: PathBuf::from("/test/playlists"),
+            volume: 0.8,
+            lastfm: None,
+        };
+
+        let toml_string = toml::to_string(&config).unwrap();
+        let deserialized: Config = toml::from_str(&toml_string).unwrap();
+
+        assert_eq!(deserialized.music_dir, PathBuf::from("/test/music"));
+        assert_eq!(deserialized.playlist_dir, PathBuf::from("/test/playlists"));
+        assert_eq!(deserialized.volume, 0.8);
+        assert!(deserialized.lastfm.is_none());
+    }
+
+    #[test]
+    fn test_config_with_lastfm() {
+        let lastfm_config = LastfmConfig {
+            enabled: true,
+            api_key: "test_api_key".to_string(),
+            api_secret: "test_secret".to_string(),
+            session_key: "test_session".to_string(),
+        };
+
+        let config = Config {
+            music_dir: PathBuf::from("/test/music"),
+            playlist_dir: PathBuf::from("/test/playlists"),
+            volume: 0.7,
+            lastfm: Some(lastfm_config.clone()),
+        };
+
+        let toml_string = toml::to_string(&config).unwrap();
+        let deserialized: Config = toml::from_str(&toml_string).unwrap();
+
+        assert!(deserialized.lastfm.is_some());
+        let lastfm = deserialized.lastfm.unwrap();
+        assert!(lastfm.enabled);
+        assert_eq!(lastfm.api_key, "test_api_key");
+        assert_eq!(lastfm.api_secret, "test_secret");
+        assert_eq!(lastfm.session_key, "test_session");
+    }
+
+    #[test]
+    fn test_config_deserialization_with_defaults() {
+        let toml_string = r#"
+            music_dir = "/custom/music"
+        "#;
+
+        let config: Config = toml::from_str(toml_string).unwrap();
+        assert_eq!(config.music_dir, PathBuf::from("/custom/music"));
+        assert_eq!(config.volume, 0.5); // default
+        assert!(!config.playlist_dir.as_os_str().is_empty()); // default
+    }
+
+    #[test]
+    fn test_default_volume() {
+        assert_eq!(default_volume(), 0.5);
+    }
+}
