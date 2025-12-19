@@ -143,6 +143,26 @@ impl App {
         })
     }
 
+    pub fn load_initial_queue(&mut self, tracks: Vec<PathBuf>) {
+        for track in tracks {
+            self.queue.add(track);
+        }
+        // Switch to Now Playing tab and start playing first track
+        if !self.queue.is_empty() {
+            self.current_tab = Tab::NowPlaying;
+            if let Some(track) = self.queue.current() {
+                let _ = self.player.play(track.clone());
+                self.track_play_time = Arc::new(Mutex::new(Some(SystemTime::now())));
+                // Update Last.fm now playing if enabled
+                if self.lastfm_scrobbler.is_enabled() {
+                    if let Some(metadata) = self.player.current_metadata() {
+                        let _ = self.lastfm_scrobbler.now_playing(track, &metadata);
+                    }
+                }
+            }
+        }
+    }
+
     pub fn run<B: Backend>(&mut self, terminal: &mut Terminal<B>) -> Result<()> {
         loop {
             terminal.draw(|f| self.draw(f))?;

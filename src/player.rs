@@ -1,8 +1,7 @@
 use crate::metadata::TrackMetadata;
 use anyhow::{Context, Result};
-use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink, Source};
+use rodio::{OutputStream, OutputStreamHandle, Sink, Source};
 use std::fs::File;
-use std::io::BufReader;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
@@ -62,27 +61,11 @@ impl Player {
             anyhow::bail!("Audio file is empty: {:?}", path);
         }
 
-        // Try standard rodio decoder first
-        let decode_result = Decoder::new(BufReader::new(file));
-
-        let source: Box<dyn Source<Item = i16> + Send> = match decode_result {
-            Ok(decoder) => Box::new(decoder),
-            Err(_) => {
-                // If standard decoder fails, try Opus decoder for .opus files
-                if path.extension().and_then(|e| e.to_str()) == Some("opus") {
-                    let opus_source = self
-                        .decode_opus(&path)
-                        .context(format!("Failed to decode Opus file: {:?}", path))?;
-                    Box::new(opus_source)
-                } else {
-                    // Re-open file and try again to get proper error
-                    let file = File::open(&path)?;
-                    Decoder::new(BufReader::new(file))
-                        .context(format!("Failed to decode audio file: {:?}. The file may be corrupted, incomplete, or in an unsupported format.", path))?;
-                    unreachable!()
-                }
-            }
-        };
+        // Use custom Symphonia decoder for all formats to ensure consistent seek support
+        let symphonia_source = self
+            .decode_symphonia(&path)
+            .context(format!("Failed to decode audio file: {:?}", path))?;
+        let source: Box<dyn Source<Item = i16> + Send> = Box::new(symphonia_source);
 
         let sink = Sink::try_new(&self.stream_handle).context("Failed to create audio sink")?;
 
@@ -100,9 +83,9 @@ impl Player {
         Ok(())
     }
 
-    fn decode_opus(&self, path: &PathBuf) -> Result<impl Source<Item = i16> + Send> {
-        // Create a media source stream from the file
-        let file = File::open(path)?;
+    fn decode_symphonia(&self, path: &PathBuf) -> Result<impl Source<Item = i16> + Send> {
+        // Create a media source stream from the file with seek support
+        let file = std::fs::File::open(path)?;
         let mss = MediaSourceStream::new(Box::new(file), Default::default());
 
         // Create a hint to help the format registry
@@ -111,32 +94,37 @@ impl Player {
             hint.with_extension(extension);
         }
 
-        // Create a custom codec registry with Opus support
-        let mut codecs = CodecRegistry::new();
-        codecs.register_all::<OpusDecoder>();
-
         // Probe the media source
         let probed = symphonia::default::get_probe()
             .format(
                 &hint,
                 mss,
-                &FormatOptions::default(),
+                &FormatOptions {
+                    enable_gapless: true,
+                    ..Default::default()
+                },
                 &MetadataOptions::default(),
             )
-            .context("Failed to probe Opus file")?;
+            .context("Failed to probe audio file")?;
 
         let format = probed.format;
         let track = format
             .default_track()
-            .context("No default track found in Opus file")?;
+            .context("No default track found in audio file")?;
 
         let track_id = track.id;
         let codec_params = track.codec_params.clone();
 
-        // Create decoder
-        let decoder = codecs
+        // Create decoder using the default codec registry
+        let decoder = symphonia::default::get_codecs()
             .make(&codec_params, &DecoderOptions::default())
-            .context("Failed to create Opus decoder")?;
+            .or_else(|_| {
+                // If default codecs fail, try with Opus support
+                let mut codecs = CodecRegistry::new();
+                codecs.register_all::<OpusDecoder>();
+                codecs.make(&codec_params, &DecoderOptions::default())
+            })
+            .context("Failed to create decoder")?;
 
         Ok(SymphoniaSource::new(decoder, format, track_id))
     }
@@ -265,8 +253,9 @@ impl Player {
     }
 
     pub fn seek_forward(&self, seconds: u64) {
+        let current = self.get_elapsed_duration();
+        let target_position = current + Duration::from_secs(seconds);
         if let Some(sink) = self.sink.lock().unwrap().as_ref() {
-            let target_position = self.get_elapsed_duration() + Duration::from_secs(seconds);
             if let Err(e) = sink.try_seek(target_position) {
                 eprintln!("Failed to seek: {:?}", e);
             } else {
@@ -278,9 +267,9 @@ impl Player {
     }
 
     pub fn seek_backward(&self, seconds: u64) {
+        let current = self.get_elapsed_duration();
+        let target_position = current.saturating_sub(Duration::from_secs(seconds));
         if let Some(sink) = self.sink.lock().unwrap().as_ref() {
-            let current = self.get_elapsed_duration();
-            let target_position = current.saturating_sub(Duration::from_secs(seconds));
             if let Err(e) = sink.try_seek(target_position) {
                 eprintln!("Failed to seek: {:?}", e);
             } else {
@@ -388,5 +377,33 @@ impl Source for SymphoniaSource {
 
     fn total_duration(&self) -> Option<std::time::Duration> {
         None
+    }
+
+    fn try_seek(&mut self, pos: std::time::Duration) -> Result<(), rodio::source::SeekError> {
+        use symphonia::core::formats::SeekMode;
+        use symphonia::core::formats::SeekTo;
+
+        let sample_rate = self.sample_rate as u64;
+        let target_ts =
+            pos.as_secs() * sample_rate + (pos.subsec_nanos() as u64 * sample_rate / 1_000_000_000);
+
+        self.format
+            .seek(
+                SeekMode::Accurate,
+                SeekTo::TimeStamp {
+                    ts: target_ts,
+                    track_id: self.track_id,
+                },
+            )
+            .map_err(|_| rodio::source::SeekError::NotSupported {
+                underlying_source: "impulse::player::SymphoniaSource",
+            })?;
+
+        // Reset decoder state after seek
+        self.decoder.reset();
+        self.sample_buf = None;
+        self.sample_pos = 0;
+
+        Ok(())
     }
 }

@@ -9,6 +9,7 @@ Minimalist music player with minimal dependencies, focusing on speed and a keybo
 - 🔍 **Fuzzy search** - Quickly find tracks with fuzzy matching
 - 📋 **Queue management** - Build and manage your playback queue
 - 💾 **Playlist support** - Create and manage M3U playlists
+- 📝 **Load from text files** - Import playlists from "artist - song" format files
 - 🎨 **Minimal TUI** - Clean interface with multiple tabs (Browser, Now Playing, Playlists)
 - ⚙️  **Configuration file** - Customize settings via TOML config
 - 🚀 **Minimal dependencies** - Fast and lightweight
@@ -59,10 +60,30 @@ Add to your NixOS configuration:
 
 ```bash
 impulse
+
+# Load playlist from text file
+impulse --load-playlist songs.txt
 ```
 
 On first run, a default configuration file will be created at `~/.config/impulse/impulse.conf`.
 Playlists (including saved queues) default to `~/.local/share/impulse/playlists`.
+
+### Load Playlist from File
+
+Load songs from a text file with "artist - song" format (one per line):
+
+```bash
+impulse --load-playlist <file.txt>
+```
+
+Example file format:
+```
+Swans - Blind
+Willie Colón - Oh, que sera?
+Aphex Twin - #19
+```
+
+Songs are matched against your music library and added to the queue. See [LOAD_PLAYLIST.md](LOAD_PLAYLIST.md) for details.
 
 ## Keybindings
 

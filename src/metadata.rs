@@ -31,11 +31,14 @@ impl TrackMetadata {
             hint.with_extension(extension);
         }
 
-        let probed = symphonia::default::get_probe().format(
+        let mut probed = symphonia::default::get_probe().format(
             &hint,
             mss,
             &FormatOptions::default(),
-            &MetadataOptions::default(),
+            &MetadataOptions {
+                limit_metadata_bytes: symphonia::core::meta::Limit::Maximum(u64::MAX as usize),
+                limit_visual_bytes: symphonia::core::meta::Limit::Maximum(u64::MAX as usize),
+            },
         )?;
 
         let mut metadata = TrackMetadata::default();
@@ -50,11 +53,19 @@ impl TrackMetadata {
             }
         }
 
-        // Read metadata from the format reader
+        // Read metadata from the format reader - this gets ID3v2 tags from MP3 files
         let mut format = probed.format;
         if let Some(metadata_rev) = format.metadata().current() {
             metadata.read_tags(metadata_rev.tags());
             metadata.read_visuals(metadata_rev.visuals());
+        }
+
+        // Also check for metadata in the probed metadata (ID3v1 tags)
+        if let Some(probed_metadata) = probed.metadata.get() {
+            if let Some(metadata_rev) = probed_metadata.current() {
+                metadata.read_tags(metadata_rev.tags());
+                metadata.read_visuals(metadata_rev.visuals());
+            }
         }
 
         // If no embedded cover art, look for external image files
