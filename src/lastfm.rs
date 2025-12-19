@@ -13,23 +13,23 @@ pub struct LastfmScrobbler {
 }
 
 impl LastfmScrobbler {
-    pub fn new(config: Option<&LastfmConfig>) -> Result<Self> {
+    pub fn new(config: Option<&LastfmConfig>) -> Self {
         if let Some(cfg) = config {
             if cfg.enabled {
                 let mut scrobbler = Scrobbler::new(&cfg.api_key, &cfg.api_secret);
                 scrobbler.authenticate_with_session_key(&cfg.session_key);
-                return Ok(Self {
+                return Self {
                     scrobbler: Arc::new(Mutex::new(Some(scrobbler))),
                     enabled: true,
                     current_track_start: Arc::new(Mutex::new(None)),
-                });
+                };
             }
         }
-        Ok(Self {
+        Self {
             scrobbler: Arc::new(Mutex::new(None)),
             enabled: false,
             current_track_start: Arc::new(Mutex::new(None)),
-        })
+        }
     }
 
     pub fn is_enabled(&self) -> bool {
@@ -49,11 +49,11 @@ impl LastfmScrobbler {
         let title = metadata
             .title
             .as_deref()
-            .map(|s| s.to_string())
+            .map(std::string::ToString::to_string)
             .or_else(|| {
                 path.file_stem()
                     .and_then(|s| s.to_str())
-                    .map(|s| s.to_string())
+                    .map(std::string::ToString::to_string)
             })
             .unwrap_or_else(|| "Unknown Track".to_string());
 

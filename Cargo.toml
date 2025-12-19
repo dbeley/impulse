@@ -1,11 +1,46 @@
 [package]
 name = "impulse"
 version = "0.1.1"
-edition = "2021"
-rust-version = "1.80"
+edition = "2024"
+rust-version = "1.85"
 authors = ["dbeley"]
 description = "Minimalist music player with minimal dependencies, focusing on speed and a keyboard-centric TUI"
 license = "MIT"
+
+[lints.rust]
+# Rust 2024 edition lints
+unsafe_op_in_unsafe_fn = "warn"
+
+[lints.clippy]
+# Recommended clippy lints for Rust 2024
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+# Allow some pedantic lints that are too strict or require significant refactoring
+must_use_candidate = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+too_many_lines = "allow"              # Function length limits are arbitrary
+cast_precision_loss = "allow"         # f64 precision is acceptable for UI
+cast_possible_truncation = "allow"    # Checked conversions add complexity
+cast_possible_wrap = "allow"          # Score calculations are fine as-is
+cast_sign_loss = "allow"              # Progress bars don't need sign
+float_cmp = "allow"                   # Test assertions are fine
+unnecessary_wraps = "allow"           # Consistent API is more important
+if_not_else = "allow"                 # Positive conditions sometimes clearer
+items_after_statements = "allow"      # Constants close to usage are readable
+trivially_copy_pass_by_ref = "allow"  # Consistency with trait methods
+map_unwrap_or = "allow"               # map_or/is_some_and not always clearer
+redundant_closure_for_method_calls = "allow"  # Sometimes explicit is clearer
+uninlined_format_args = "allow"       # Old style is still valid
+unnecessary_debug_formatting = "allow" # Debug formatting is explicit
+case_sensitive_file_extension_comparisons = "allow"  # Extensions are case-sensitive on Unix
+unused_self = "allow"                 # Trait implementations may need &self
+format_push_string = "allow"          # write! macro adds complexity
+assigning_clones = "allow"            # clone_from not always better
+cast_lossless = "allow"               # Explicit casts are clearer
+manual_let_else = "allow"             # match can be clearer
+needless_continue = "allow"           # Explicit continue shows intent
+unnecessary_map_or = "allow"          # map_or is clear and established
 
 [dependencies]
 # TUI framework

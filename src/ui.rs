@@ -6,15 +6,15 @@ use crate::playlist::PlaylistManager;
 use crate::queue::Queue;
 use anyhow::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEvent};
-use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
+use fuzzy_matcher::skim::SkimMatcherV2;
 use ratatui::{
+    Frame, Terminal,
     backend::Backend,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph},
-    Frame, Terminal,
 };
 use ratatui_image::{picker::Picker, protocol::StatefulProtocol};
 use std::path::{Path, PathBuf};
@@ -111,7 +111,7 @@ impl App {
         picker.guess_protocol();
 
         // Initialize Last.fm scrobbler
-        let lastfm_scrobbler = LastfmScrobbler::new(config.lastfm.as_ref())?;
+        let lastfm_scrobbler = LastfmScrobbler::new(config.lastfm.as_ref());
 
         Ok(Self {
             player,
@@ -248,7 +248,7 @@ impl App {
                 self.input_mode = InputMode::Command;
                 self.command_input.clear();
             }
-            KeyCode::Char(' ') | KeyCode::Char('p') => {
+            KeyCode::Char(' ' | 'p') => {
                 if self.player.is_playing() {
                     self.player.pause();
                     self.set_status(String::from("Paused"));
@@ -470,7 +470,7 @@ impl App {
 
     fn handle_player_keys(&mut self, key: KeyEvent) -> Result<()> {
         match key.code {
-            KeyCode::Char('+') | KeyCode::Char('=') => {
+            KeyCode::Char('+' | '=') => {
                 self.config.volume = (self.config.volume + 0.1).min(1.0);
                 self.player.set_volume(self.config.volume);
                 self.set_status(format!("Volume: {:.0}%", self.config.volume * 100.0));

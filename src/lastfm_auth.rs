@@ -1,5 +1,5 @@
 use crate::config::Config;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use reqwest::blocking::Client;
 use serde_json::Value;
 use std::io::{self, Write};
@@ -7,9 +7,8 @@ use std::io::{self, Write};
 const LASTFM_API_URL: &str = "https://ws.audioscrobbler.com/2.0/";
 
 pub fn ensure_lastfm_session_key(config: &mut Config) -> Result<()> {
-    let lastfm = match config.lastfm.as_mut() {
-        Some(cfg) => cfg,
-        None => return Ok(()),
+    let Some(lastfm) = config.lastfm.as_mut() else {
+        return Ok(());
     };
 
     if !lastfm.enabled {
@@ -41,7 +40,7 @@ pub fn ensure_lastfm_session_key(config: &mut Config) -> Result<()> {
     );
     println!();
     println!("Please authorize Impulse with Last.fm by visiting:");
-    println!("{}", auth_url);
+    println!("{auth_url}");
 
     if webbrowser::open(&auth_url).is_ok() {
         println!("Opened the URL in your default browser.");
@@ -88,7 +87,7 @@ fn fetch_token(client: &Client, api_key: &str) -> Result<String> {
     value
         .get("token")
         .and_then(|v| v.as_str())
-        .map(|s| s.to_string())
+        .map(std::string::ToString::to_string)
         .ok_or_else(|| anyhow!("Last.fm token response did not include a token"))
 }
 
@@ -101,8 +100,7 @@ fn fetch_session_key(
     let api_sig = format!(
         "{:x}",
         md5::compute(format!(
-            "api_key{}methodauth.getSessiontoken{}{}",
-            api_key, token, api_secret
+            "api_key{api_key}methodauth.getSessiontoken{token}{api_secret}"
         ))
     );
 
@@ -132,7 +130,7 @@ fn fetch_session_key(
         .get("session")
         .and_then(|session| session.get("key"))
         .and_then(|key| key.as_str())
-        .map(|s| s.to_string())
+        .map(std::string::ToString::to_string)
         .ok_or_else(|| anyhow!("Last.fm session response did not include a key"))
 }
 
@@ -143,8 +141,8 @@ fn lastfm_api_error(value: &Value) -> Option<String> {
             .and_then(|m| m.as_str())
             .unwrap_or("No error message provided");
         match err.as_i64() {
-            Some(code) => format!("Last.fm API error {}: {}", code, msg),
-            None => format!("Last.fm API error: {}", msg),
+            Some(code) => format!("Last.fm API error {code}: {msg}"),
+            None => format!("Last.fm API error: {msg}"),
         }
     })
 }

@@ -206,12 +206,14 @@ Impulse displays album artwork in the Now Playing tab. It supports:
 
 ## Requirements
 
-- Rust 1.70 or later (or Nix with flakes enabled)
+- Rust 1.85 or later (or Nix with flakes enabled)
 - ALSA development libraries (Linux)
   - Ubuntu/Debian: `sudo apt-get install libasound2-dev`
   - Fedora: `sudo dnf install alsa-lib-devel`
   - Arch: `sudo pacman -S alsa-lib`
   - NixOS: Automatically provided in the dev shell
+
+**Note**: This project uses Rust Edition 2024, which requires Rust 1.85+. If you're using an older version, you can temporarily change `edition = "2024"` to `edition = "2021"` in `Cargo.toml`.
 
 ## Development
 

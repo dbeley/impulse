@@ -2,7 +2,7 @@ use anyhow::Result;
 use std::fs::File;
 use std::path::Path;
 use symphonia::core::formats::FormatOptions;
-use symphonia::core::io::MediaSourceStream;
+use symphonia::core::io::{MediaSourceStream, MediaSourceStreamOptions};
 use symphonia::core::meta::{MetadataOptions, StandardTagKey, Tag};
 use symphonia::core::probe::Hint;
 
@@ -24,7 +24,7 @@ impl TrackMetadata {
     pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self> {
         let path = path.as_ref();
         let file = File::open(path)?;
-        let mss = MediaSourceStream::new(Box::new(file), Default::default());
+        let mss = MediaSourceStream::new(Box::new(file), MediaSourceStreamOptions::default());
 
         let mut hint = Hint::new();
         if let Some(extension) = path.extension().and_then(|e| e.to_str()) {
@@ -36,8 +36,8 @@ impl TrackMetadata {
             mss,
             &FormatOptions::default(),
             &MetadataOptions {
-                limit_metadata_bytes: symphonia::core::meta::Limit::Maximum(u64::MAX as usize),
-                limit_visual_bytes: symphonia::core::meta::Limit::Maximum(u64::MAX as usize),
+                limit_metadata_bytes: symphonia::core::meta::Limit::Maximum(usize::MAX),
+                limit_visual_bytes: symphonia::core::meta::Limit::Maximum(usize::MAX),
             },
         )?;
 
@@ -87,7 +87,7 @@ impl TrackMetadata {
                     StandardTagKey::Album => self.album = Some(value_str),
                     StandardTagKey::AlbumArtist => self.album_artist = Some(value_str),
                     StandardTagKey::Date | StandardTagKey::ReleaseDate => {
-                        self.year = Some(value_str)
+                        self.year = Some(value_str);
                     }
                     StandardTagKey::Genre => self.genre = Some(value_str),
                     StandardTagKey::TrackNumber => self.track_number = Some(value_str),
@@ -175,9 +175,9 @@ impl TrackMetadata {
                 let seconds = secs % 60;
 
                 if hours > 0 {
-                    format!("{}:{:02}:{:02}", hours, minutes, seconds)
+                    format!("{hours}:{minutes:02}:{seconds:02}")
                 } else {
-                    format!("{}:{:02}", minutes, seconds)
+                    format!("{minutes}:{seconds:02}")
                 }
             }
             None => "Unknown".to_string(),

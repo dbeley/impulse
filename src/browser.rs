@@ -75,12 +75,10 @@ impl Browser {
 
         // Sort: directories first, then files, all alphabetically
         self.entries.sort_by(|a, b| match (a, b) {
-            (FileEntry::Directory(p1), FileEntry::Directory(p2)) => {
-                p1.file_name().cmp(&p2.file_name())
-            }
             (FileEntry::Directory(_), FileEntry::AudioFile(_)) => std::cmp::Ordering::Less,
             (FileEntry::AudioFile(_), FileEntry::Directory(_)) => std::cmp::Ordering::Greater,
-            (FileEntry::AudioFile(p1), FileEntry::AudioFile(p2)) => {
+            (FileEntry::Directory(p1), FileEntry::Directory(p2))
+            | (FileEntry::AudioFile(p1), FileEntry::AudioFile(p2)) => {
                 p1.file_name().cmp(&p2.file_name())
             }
             _ => std::cmp::Ordering::Equal,
@@ -114,7 +112,7 @@ impl Browser {
             match entry {
                 FileEntry::Directory(path) | FileEntry::ParentDirectory(path) => {
                     self.remember_selection();
-                    self.current_dir = path.clone();
+                    self.current_dir.clone_from(&path);
                     self.load_entries();
                     None
                 }
@@ -146,7 +144,7 @@ impl Browser {
     }
 
     pub fn go_parent(&mut self) {
-        if let Some(parent) = self.current_dir.parent().map(|p| p.to_path_buf()) {
+        if let Some(parent) = self.current_dir.parent().map(std::path::Path::to_path_buf) {
             self.remember_selection();
             self.current_dir = parent;
             self.load_entries();
@@ -202,7 +200,7 @@ impl Browser {
         for entry in WalkDir::new(&self.current_dir)
             .follow_links(true)
             .into_iter()
-            .filter_map(|e| e.ok())
+            .filter_map(std::result::Result::ok)
         {
             let path = entry.path();
             if path.is_file() && is_audio_file(path) {

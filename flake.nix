@@ -39,9 +39,8 @@
           cargo-watch
           cargo-edit
           cargo-outdated
-          # Build optimization tools
-          mold     # Fast linker (2-5x faster than lld)
-          clang    # Required for mold
+          mold
+          clang
         ];
 
       in
@@ -50,7 +49,7 @@
           inherit nativeBuildInputs buildInputs;
 
           pname = "impulse";
-          version = "0.1.0";
+          version = "0.1.1";
           src = ./.;
           cargoLock = {
             lockFile = ./Cargo.lock;
@@ -59,7 +58,6 @@
             description = "Minimalist music player with minimal dependencies, focusing on speed and a keyboard-centric TUI";
             homepage = "https://github.com/dbeley/impulse";
             license = licenses.mit;
-            maintainers = [ ];
             mainProgram = "impulse";
           };
         };

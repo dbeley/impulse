@@ -9,7 +9,7 @@ use std::time::{Duration, SystemTime};
 use symphonia::core::audio::SampleBuffer;
 use symphonia::core::codecs::{CodecRegistry, DecoderOptions};
 use symphonia::core::formats::FormatOptions;
-use symphonia::core::io::MediaSourceStream;
+use symphonia::core::io::{MediaSourceStream, MediaSourceStreamOptions};
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
 use symphonia_adapter_libopus::OpusDecoder;
@@ -51,20 +51,20 @@ impl Player {
     }
 
     pub fn play(&self, path: PathBuf) -> Result<()> {
-        let file = File::open(&path).context(format!("Failed to open audio file: {:?}", path))?;
+        let file =
+            File::open(&path).context(format!("Failed to open audio file: {}", path.display()))?;
 
         let file_metadata = file
             .metadata()
-            .context(format!("Failed to read file metadata: {:?}", path))?;
+            .context(format!("Failed to read file metadata: {}", path.display()))?;
 
         if file_metadata.len() == 0 {
-            anyhow::bail!("Audio file is empty: {:?}", path);
+            anyhow::bail!("Audio file is empty: {}", path.display());
         }
 
         // Use custom Symphonia decoder for all formats to ensure consistent seek support
-        let symphonia_source = self
-            .decode_symphonia(&path)
-            .context(format!("Failed to decode audio file: {:?}", path))?;
+        let symphonia_source = Self::decode_symphonia(&path)
+            .context(format!("Failed to decode audio file: {}", path.display()))?;
         let source: Box<dyn Source<Item = i16> + Send> = Box::new(symphonia_source);
 
         let sink = Sink::try_new(&self.stream_handle).context("Failed to create audio sink")?;
@@ -83,10 +83,10 @@ impl Player {
         Ok(())
     }
 
-    fn decode_symphonia(&self, path: &PathBuf) -> Result<impl Source<Item = i16> + Send> {
+    fn decode_symphonia(path: &PathBuf) -> Result<impl Source<Item = i16> + Send + use<>> {
         // Create a media source stream from the file with seek support
         let file = std::fs::File::open(path)?;
-        let mss = MediaSourceStream::new(Box::new(file), Default::default());
+        let mss = MediaSourceStream::new(Box::new(file), MediaSourceStreamOptions::default());
 
         // Create a hint to help the format registry
         let mut hint = Hint::new();
@@ -171,8 +171,7 @@ impl Player {
             .lock()
             .unwrap()
             .as_ref()
-            .map(|s| !s.is_paused() && !s.empty())
-            .unwrap_or(false)
+            .is_some_and(|s| !s.is_paused() && !s.empty())
     }
 
     pub fn is_paused(&self) -> bool {
@@ -180,8 +179,7 @@ impl Player {
             .lock()
             .unwrap()
             .as_ref()
-            .map(|s| s.is_paused())
-            .unwrap_or(false)
+            .is_some_and(rodio::Sink::is_paused)
     }
 
     pub fn is_finished(&self) -> bool {
@@ -189,8 +187,7 @@ impl Player {
             .lock()
             .unwrap()
             .as_ref()
-            .map(|s| s.empty())
-            .unwrap_or(true)
+            .map_or(true, rodio::Sink::empty)
     }
 
     pub fn current_track(&self) -> Option<PathBuf> {
