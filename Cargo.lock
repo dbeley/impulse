@@ -1066,6 +1066,7 @@ dependencies = [
  "fuzzy-matcher",
  "image",
  "md5",
+ "rand",
  "ratatui",
  "ratatui-image",
  "reqwest",

@@ -53,6 +53,8 @@ Add to your NixOS configuration:
 
   # In your configuration.nix or home.nix:
   programs.impulse.enable = true;
+  # Or in your home-manager configuration
+  home.packages = [ inputs.impulse.packages.${pkgs.system}.default ];
 }
 ```
 
@@ -95,6 +97,7 @@ Songs are matched against your music library and added to the queue. See [LOAD_P
 - `n` - Next track
 - `P` - Previous track
 - `>` / `<` - Next/previous track (alternative to `n`/`P`)
+- `r` - Toggle random mode (plays queue in random order)
 - `s` - Stop playback
 - `/` - Start search mode
 - `:` - Command mode
@@ -232,22 +235,4 @@ Install Rust and the required system dependencies, then:
 
 ```bash
 cargo build
-```
-
-### Pre-commit Hooks
-
-This project uses [prek](https://github.com/pinage404/prek) for managing pre-commit hooks.
-
-```bash
-# Install prek (if not using Nix)
-cargo install prek
-
-# Run pre-commit checks
-prek run
-
-# Run checks on all files
-prek run --all
-
-# Install git hooks (optional)
-prek install
 ```

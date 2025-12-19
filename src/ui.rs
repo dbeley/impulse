@@ -21,7 +21,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
-const HELP_TEXT: &str = "Keys: j/k/↑/↓=nav, l/→/Enter=select, h/←=back, Space/p=play/pause, >=next, <=prev, a=add, A=add-all, Tab/1-3=switch-tab, /=search, q=quit";
+const HELP_TEXT: &str = "Keys: j/k/↑/↓=nav, l/→/Enter=select, h/←=back, Space/p=play/pause, >=next, <=prev, r=random, a=add, A=add-all, Tab/1-3=switch-tab, /=search, q=quit";
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Tab {
@@ -270,6 +270,15 @@ impl App {
             }
             KeyCode::Char('<') => {
                 self.play_prev();
+            }
+            KeyCode::Char('r') => {
+                self.queue.toggle_random();
+                let status = if self.queue.is_random() {
+                    "Random mode enabled"
+                } else {
+                    "Random mode disabled"
+                };
+                self.set_status(String::from(status));
             }
             KeyCode::Char('s') => {
                 self.scrobble_if_needed();
@@ -883,7 +892,12 @@ impl App {
             })
             .collect();
 
-        let title = format!("Queue ({} tracks)", tracks.len());
+        let random_indicator = if self.queue.is_random() {
+            " [RANDOM]"
+        } else {
+            ""
+        };
+        let title = format!("Queue ({} tracks){}", tracks.len(), random_indicator);
         let list = List::new(items)
             .block(Block::default().borders(Borders::ALL).title(title))
             .highlight_style(Style::default().add_modifier(Modifier::REVERSED));

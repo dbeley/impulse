@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
@@ -7,6 +8,9 @@ use std::path::PathBuf;
 pub struct Queue {
     tracks: Vec<PathBuf>,
     current_index: Option<usize>,
+    random_mode: bool,
+    #[serde(skip)]
+    played_indices: Vec<usize>,
 }
 
 impl Queue {
@@ -14,6 +18,8 @@ impl Queue {
         Self {
             tracks: Vec::new(),
             current_index: None,
+            random_mode: false,
+            played_indices: Vec::new(),
         }
     }
 
@@ -64,13 +70,46 @@ impl Queue {
     }
 
     pub fn next(&mut self) -> Option<&PathBuf> {
-        if let Some(current) = self.current_index {
-            if current + 1 < self.tracks.len() {
-                self.current_index = Some(current + 1);
-                return self.current();
-            }
+        if self.tracks.is_empty() {
+            return None;
         }
-        None
+
+        if self.random_mode {
+            // Mark current track as played
+            if let Some(current) = self.current_index {
+                if !self.played_indices.contains(&current) {
+                    self.played_indices.push(current);
+                }
+            }
+
+            // If all tracks have been played, reset
+            if self.played_indices.len() >= self.tracks.len() {
+                self.played_indices.clear();
+            }
+
+            // Find unplayed tracks
+            let unplayed: Vec<usize> = (0..self.tracks.len())
+                .filter(|i| !self.played_indices.contains(i))
+                .collect();
+
+            if !unplayed.is_empty() {
+                let mut rng = rand::thread_rng();
+                if let Some(&next_idx) = unplayed.choose(&mut rng) {
+                    self.current_index = Some(next_idx);
+                    return self.current();
+                }
+            }
+            None
+        } else {
+            // Sequential mode
+            if let Some(current) = self.current_index {
+                if current + 1 < self.tracks.len() {
+                    self.current_index = Some(current + 1);
+                    return self.current();
+                }
+            }
+            None
+        }
     }
 
     pub fn prev(&mut self) -> Option<&PathBuf> {
@@ -106,6 +145,17 @@ impl Queue {
 
     pub fn len(&self) -> usize {
         self.tracks.len()
+    }
+
+    pub fn toggle_random(&mut self) {
+        self.random_mode = !self.random_mode;
+        if self.random_mode {
+            self.played_indices.clear();
+        }
+    }
+
+    pub fn is_random(&self) -> bool {
+        self.random_mode
     }
 
     pub fn move_up(&mut self, index: usize) {
@@ -431,5 +481,88 @@ mod tests {
 
         queue.move_down(1);
         assert_eq!(queue.current_index(), Some(2));
+    }
+
+    #[test]
+    fn test_toggle_random() {
+        let mut queue = Queue::new();
+        assert!(!queue.is_random());
+
+        queue.toggle_random();
+        assert!(queue.is_random());
+
+        queue.toggle_random();
+        assert!(!queue.is_random());
+    }
+
+    #[test]
+    fn test_random_mode_plays_all_tracks() {
+        let mut queue = Queue::new();
+        let tracks = vec![
+            PathBuf::from("/music/track1.mp3"),
+            PathBuf::from("/music/track2.mp3"),
+            PathBuf::from("/music/track3.mp3"),
+            PathBuf::from("/music/track4.mp3"),
+            PathBuf::from("/music/track5.mp3"),
+        ];
+        queue.add_multiple(tracks.clone());
+        queue.toggle_random();
+
+        let mut played = std::collections::HashSet::new();
+
+        // Play through all tracks
+        for _ in 0..tracks.len() {
+            if let Some(track) = queue.current() {
+                played.insert(track.clone());
+            }
+            queue.next();
+        }
+
+        // Should have played all unique tracks
+        assert_eq!(played.len(), tracks.len());
+    }
+
+    #[test]
+    fn test_random_mode_resets_after_all_played() {
+        let mut queue = Queue::new();
+        let tracks = vec![
+            PathBuf::from("/music/track1.mp3"),
+            PathBuf::from("/music/track2.mp3"),
+            PathBuf::from("/music/track3.mp3"),
+        ];
+        queue.add_multiple(tracks.clone());
+        queue.toggle_random();
+
+        // Play through all tracks
+        for _ in 0..tracks.len() {
+            queue.next();
+        }
+
+        // After playing all, should be able to play again
+        let next_track = queue.current();
+        assert!(next_track.is_some());
+    }
+
+    #[test]
+    fn test_sequential_mode_after_random() {
+        let mut queue = Queue::new();
+        let tracks = vec![
+            PathBuf::from("/music/track1.mp3"),
+            PathBuf::from("/music/track2.mp3"),
+            PathBuf::from("/music/track3.mp3"),
+        ];
+        queue.add_multiple(tracks.clone());
+
+        // Enable random mode
+        queue.toggle_random();
+        queue.next();
+
+        // Disable random mode
+        queue.toggle_random();
+
+        // Should work sequentially now
+        queue.jump_to(0);
+        assert_eq!(queue.next(), Some(&tracks[1]));
+        assert_eq!(queue.next(), Some(&tracks[2]));
     }
 }
