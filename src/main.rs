@@ -23,9 +23,9 @@ use walkdir::WalkDir;
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
-    /// Load songs from a text file with "artist - song" format (one per line)
+    /// Load songs from text file(s) with "artist - song" format (one per line). Can be specified multiple times.
     #[arg(short, long, value_name = "FILE")]
-    load_playlist: Option<PathBuf>,
+    load_playlist: Vec<PathBuf>,
 }
 
 fn main() -> Result<()> {
@@ -43,29 +43,36 @@ fn main() -> Result<()> {
         eprintln!("Last.fm scrobbling will remain disabled until the session key is configured.");
     }
 
-    // Load songs from file if provided
-    let initial_queue = if let Some(playlist_file) = args.load_playlist {
-        match load_songs_from_file(&playlist_file, &config.music_dir) {
-            Ok(tracks) => {
-                if tracks.is_empty() {
+    // Load songs from file(s) if provided
+    let initial_queue = if !args.load_playlist.is_empty() {
+        let mut all_tracks = Vec::new();
+        for playlist_file in &args.load_playlist {
+            match load_songs_from_file(playlist_file, &config.music_dir) {
+                Ok(tracks) => {
+                    if tracks.is_empty() {
+                        eprintln!(
+                            "Warning: No matching songs found from {}",
+                            playlist_file.display()
+                        );
+                    } else {
+                        eprintln!(
+                            "Loaded {} songs from {}",
+                            tracks.len(),
+                            playlist_file.display()
+                        );
+                        all_tracks.extend(tracks);
+                    }
+                }
+                Err(e) => {
                     eprintln!(
-                        "Warning: No matching songs found from {}",
-                        playlist_file.display()
-                    );
-                } else {
-                    eprintln!(
-                        "Loaded {} songs from {}",
-                        tracks.len(),
-                        playlist_file.display()
+                        "Error loading songs from {}: {}",
+                        playlist_file.display(),
+                        e
                     );
                 }
-                tracks
-            }
-            Err(e) => {
-                eprintln!("Error loading songs from file: {}", e);
-                Vec::new()
             }
         }
+        all_tracks
     } else {
         Vec::new()
     };
@@ -221,4 +228,163 @@ fn find_matching_song_optimized(music_dir: &Path, query: &str) -> Option<PathBuf
     }
 
     best_match.map(|(path, _)| path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::TempDir;
+
+    fn create_test_music_library(temp_dir: &Path) -> PathBuf {
+        let music_dir = temp_dir.join("music");
+        fs::create_dir_all(&music_dir).unwrap();
+
+        // Create artist directories with songs
+        let artist1 = music_dir.join("Artist One");
+        fs::create_dir_all(&artist1).unwrap();
+        fs::write(artist1.join("song1.mp3"), "dummy audio").unwrap();
+        fs::write(artist1.join("song2.mp3"), "dummy audio").unwrap();
+
+        let artist2 = music_dir.join("Artist Two");
+        fs::create_dir_all(&artist2).unwrap();
+        fs::write(artist2.join("track one.mp3"), "dummy audio").unwrap();
+
+        let artist3 = music_dir.join("The Third Artist");
+        let album = artist3.join("Album Name");
+        fs::create_dir_all(&album).unwrap();
+        fs::write(album.join("best song.mp3"), "dummy audio").unwrap();
+
+        music_dir
+    }
+
+    #[test]
+    fn test_load_songs_from_file_single_file() {
+        let temp_dir = TempDir::new().unwrap();
+        let music_dir = create_test_music_library(temp_dir.path());
+
+        let playlist_file = temp_dir.path().join("playlist.txt");
+        fs::write(
+            &playlist_file,
+            "Artist One - song1\nArtist Two - track one\n",
+        )
+        .unwrap();
+
+        let result = load_songs_from_file(&playlist_file, &music_dir).unwrap();
+        assert_eq!(result.len(), 2);
+    }
+
+    #[test]
+    fn test_load_songs_from_file_with_numbers() {
+        let temp_dir = TempDir::new().unwrap();
+        let music_dir = create_test_music_library(temp_dir.path());
+
+        let playlist_file = temp_dir.path().join("playlist.txt");
+        fs::write(
+            &playlist_file,
+            "1. Artist One - song1\n2. Artist Two - track one\n3. The Third Artist - best song\n",
+        )
+        .unwrap();
+
+        let result = load_songs_from_file(&playlist_file, &music_dir).unwrap();
+        assert_eq!(result.len(), 3);
+    }
+
+    #[test]
+    fn test_load_songs_from_file_empty_lines() {
+        let temp_dir = TempDir::new().unwrap();
+        let music_dir = create_test_music_library(temp_dir.path());
+
+        let playlist_file = temp_dir.path().join("playlist.txt");
+        fs::write(
+            &playlist_file,
+            "\nArtist One - song1\n\n\nArtist Two - track one\n\n",
+        )
+        .unwrap();
+
+        let result = load_songs_from_file(&playlist_file, &music_dir).unwrap();
+        assert_eq!(result.len(), 2);
+    }
+
+    #[test]
+    fn test_load_songs_from_file_nonexistent_songs() {
+        let temp_dir = TempDir::new().unwrap();
+        let music_dir = create_test_music_library(temp_dir.path());
+
+        let playlist_file = temp_dir.path().join("playlist.txt");
+        fs::write(
+            &playlist_file,
+            "Artist One - song1\nNonexistent Artist - fake song\nArtist Two - track one\n",
+        )
+        .unwrap();
+
+        let result = load_songs_from_file(&playlist_file, &music_dir).unwrap();
+        // Should find 2 out of 3 songs (the middle one doesn't exist)
+        assert_eq!(result.len(), 2);
+    }
+
+    #[test]
+    fn test_load_songs_from_multiple_files() {
+        let temp_dir = TempDir::new().unwrap();
+        let music_dir = create_test_music_library(temp_dir.path());
+
+        let playlist1 = temp_dir.path().join("playlist1.txt");
+        fs::write(&playlist1, "Artist One - song1\n").unwrap();
+
+        let playlist2 = temp_dir.path().join("playlist2.txt");
+        fs::write(&playlist2, "Artist Two - track one\n").unwrap();
+
+        let playlist3 = temp_dir.path().join("playlist3.txt");
+        fs::write(&playlist3, "The Third Artist - best song\n").unwrap();
+
+        // Simulate loading from multiple files
+        let mut all_tracks = Vec::new();
+        all_tracks.extend(load_songs_from_file(&playlist1, &music_dir).unwrap());
+        all_tracks.extend(load_songs_from_file(&playlist2, &music_dir).unwrap());
+        all_tracks.extend(load_songs_from_file(&playlist3, &music_dir).unwrap());
+
+        assert_eq!(all_tracks.len(), 3);
+    }
+
+    #[test]
+    fn test_load_songs_sequential_order() {
+        let temp_dir = TempDir::new().unwrap();
+        let music_dir = create_test_music_library(temp_dir.path());
+
+        let playlist_file = temp_dir.path().join("playlist.txt");
+        fs::write(
+            &playlist_file,
+            "Artist Two - track one\nArtist One - song1\nArtist One - song2\n",
+        )
+        .unwrap();
+
+        let result = load_songs_from_file(&playlist_file, &music_dir).unwrap();
+        assert_eq!(result.len(), 3);
+
+        // Verify order is preserved
+        assert!(result[0].to_string_lossy().contains("track one"));
+        assert!(result[1].to_string_lossy().contains("song1"));
+        assert!(result[2].to_string_lossy().contains("song2"));
+    }
+
+    #[test]
+    fn test_find_matching_song_no_dash() {
+        let temp_dir = TempDir::new().unwrap();
+        let music_dir = create_test_music_library(temp_dir.path());
+
+        // Query without dash should return None
+        let result = find_matching_song_optimized(&music_dir, "Just A Song Name");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_find_matching_song_in_subdirectory() {
+        let temp_dir = TempDir::new().unwrap();
+        let music_dir = create_test_music_library(temp_dir.path());
+
+        // Song in album subdirectory
+        let result = find_matching_song_optimized(&music_dir, "The Third Artist - best song");
+        assert!(result.is_some());
+        assert!(result.unwrap().to_string_lossy().contains("best song"));
+    }
 }
