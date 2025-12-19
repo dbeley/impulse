@@ -21,7 +21,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
-const HELP_TEXT: &str = "Keys: j/k/↑/↓=nav, l/→/Enter=select, h/←=back, Space/p=play/pause, >=next, <=prev, r=random, a=add, A=add-all, Tab/1-3=switch-tab, /=search, q=quit";
+const HELP_TEXT: &str = "Keys: j/k/↑/↓=nav, l/→/Enter=select, h/←=back, Space/p=play/pause, >=next, <=prev, r=random, a=add, A=add-all, S=save-queue, Tab/1-3=switch-tab, /=search, q=quit";
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Tab {
@@ -738,6 +738,10 @@ impl App {
             } else {
                 self.set_status(format!("Playing: {}", track_clone.display()));
                 self.start_track(&track_clone);
+                // Sync queue selection to current playing track
+                if let Some(current_idx) = self.queue.current_index() {
+                    self.queue_selected = current_idx;
+                }
             }
         }
     }
@@ -753,6 +757,10 @@ impl App {
             } else {
                 self.set_status(format!("Playing: {}", track_clone.display()));
                 self.start_track(&track_clone);
+                // Sync queue selection to current playing track
+                if let Some(current_idx) = self.queue.current_index() {
+                    self.queue_selected = current_idx;
+                }
             }
         }
     }
