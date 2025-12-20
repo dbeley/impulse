@@ -2,6 +2,8 @@
 
 Minimalist music player with minimal dependencies, focusing on speed and a keyboard-centric TUI.
 
+<img width="1651" height="797" alt="impulse screenshot" src="https://github.com/user-attachments/assets/a9d4fd1d-b684-42b3-9905-f31cc26d7f44" />
+
 ## Features
 
 - 🎵 **Folder-based browsing** - No library management, just browse your music folders
