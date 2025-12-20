@@ -2,7 +2,7 @@
 
 Minimalist music player with minimal dependencies, focusing on speed and a keyboard-centric TUI.
 
-<img width="1651" height="797" alt="impulse screenshot" src="https://github.com/user-attachments/assets/a9d4fd1d-b684-42b3-9905-f31cc26d7f44" />
+<img width="1375" height="1130" alt="2025-12-20 20-43-42" src="https://github.com/user-attachments/assets/66a0a616-9bd3-46e5-ba4f-4c95ea4858e5" />
 
 ## Features
 
