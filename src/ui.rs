@@ -21,8 +21,6 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
-const HELP_TEXT: &str = "Keys: j/k/↑/↓=nav, l/→/Enter=select, h/←=back, Space/p=play/pause, >=next, <=prev, r=random, a=add, A=add-all, S=save-queue, Tab/1-3=switch-tab, /=search, q=quit";
-
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Tab {
     Browser,
@@ -52,6 +50,20 @@ impl Tab {
             Tab::Browser => "1. Browser",
             Tab::NowPlaying => "2. Now Playing",
             Tab::Playlists => "3. Playlists",
+        }
+    }
+
+    fn help_text(&self) -> &str {
+        match self {
+            Tab::Browser => {
+                "Keys: j/k/↑/↓=nav, l/→/Enter=select, h/←=back, a=add, A=add-all, Space/p=play/pause, >=next, <=prev, r=random, Tab/1-3=switch-tab, /=search, q=quit"
+            }
+            Tab::NowPlaying => {
+                "Keys: j/k/↑/↓=nav, Enter=jump, ←/→=seek, d=delete, K/J=move, c=clear, S=save-queue, Space/p=play/pause, >=next, <=prev, r=random, Tab/1-3=switch-tab, /=search, q=quit"
+            }
+            Tab::Playlists => {
+                "Keys: j/k/↑/↓=nav, l/Enter=add-to-queue, r=reload, Space/p=play/pause, >=next, <=prev, Tab/1-3=switch-tab, /=search, q=quit"
+            }
         }
     }
 }
@@ -223,7 +235,7 @@ impl App {
                 self.should_quit = true;
             }
             KeyCode::Char('?') => {
-                self.set_status(HELP_TEXT.to_string());
+                self.set_status(self.current_tab.help_text().to_string());
             }
             KeyCode::Char('1') => {
                 self.current_tab = Tab::Browser;
@@ -1244,7 +1256,7 @@ impl App {
         let status_text = match self.input_mode {
             InputMode::Normal => {
                 if self.status_message.is_empty() {
-                    HELP_TEXT.to_string()
+                    self.current_tab.help_text().to_string()
                 } else {
                     self.status_message.clone()
                 }
