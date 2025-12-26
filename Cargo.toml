@@ -1,6 +1,6 @@
 [package]
 name = "impulse"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2024"
 rust-version = "1.85"
 authors = ["dbeley"]
@@ -73,6 +73,9 @@ anyhow = "1.0"
 
 # Command line argument parsing
 clap = { version = "4.5", features = ["derive"] }
+
+# Date and time
+chrono = "0.4"
 
 # HTTP for Last.fm auth flow
 reqwest = { version = "0.12", features = ["blocking", "json"] }

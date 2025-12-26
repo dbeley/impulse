@@ -13,6 +13,8 @@ pub struct Config {
     pub volume: f32,
     #[serde(default)]
     pub lastfm: Option<LastfmConfig>,
+    #[serde(default = "default_log_file")]
+    pub log_file: PathBuf,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -39,6 +41,10 @@ fn default_data_dir() -> PathBuf {
         .join("impulse")
 }
 
+fn default_log_file() -> PathBuf {
+    default_data_dir().join("impulse.log")
+}
+
 fn default_volume() -> f32 {
     0.5
 }
@@ -50,6 +56,7 @@ impl Default for Config {
             playlist_dir: default_playlist_dir(),
             volume: default_volume(),
             lastfm: None,
+            log_file: default_log_file(),
         }
     }
 }
@@ -136,6 +143,7 @@ mod tests {
             playlist_dir: PathBuf::from("/test/playlists"),
             volume: 0.8,
             lastfm: None,
+            log_file: PathBuf::from("/test/impulse.log"),
         };
 
         let toml_string = toml::to_string(&config).unwrap();
@@ -161,6 +169,7 @@ mod tests {
             playlist_dir: PathBuf::from("/test/playlists"),
             volume: 0.7,
             lastfm: Some(lastfm_config.clone()),
+            log_file: PathBuf::from("/test/impulse.log"),
         };
 
         let toml_string = toml::to_string(&config).unwrap();

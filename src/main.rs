@@ -2,6 +2,7 @@ mod browser;
 mod config;
 mod lastfm;
 mod lastfm_auth;
+mod logger;
 mod metadata;
 mod player;
 mod playlist;
@@ -38,6 +39,14 @@ fn main() -> Result<()> {
             std::process::exit(1);
         }
     };
+
+    // Initialize logger
+    if let Err(e) = logger::init_logger(config.log_file.clone()) {
+        eprintln!("Warning: Failed to initialize logger: {}", e);
+    } else {
+        logger::log("Impulse music player started");
+    }
+
     if let Err(e) = lastfm_auth::ensure_lastfm_session_key(&mut config) {
         eprintln!("Warning: {}", e);
         eprintln!("Last.fm scrobbling will remain disabled until the session key is configured.");
@@ -47,28 +56,35 @@ fn main() -> Result<()> {
     let initial_queue = if !args.load_playlist.is_empty() {
         let mut all_tracks = Vec::new();
         for playlist_file in &args.load_playlist {
+            logger::log(&format!("Loading playlist: {}", playlist_file.display()));
             match load_songs_from_file(playlist_file, &config.music_dir) {
                 Ok(tracks) => {
                     if tracks.is_empty() {
-                        eprintln!(
+                        let msg = format!(
                             "Warning: No matching songs found from {}",
                             playlist_file.display()
                         );
+                        eprintln!("{}", msg);
+                        logger::log(&msg);
                     } else {
-                        eprintln!(
+                        let msg = format!(
                             "Loaded {} songs from {}",
                             tracks.len(),
                             playlist_file.display()
                         );
+                        eprintln!("{}", msg);
+                        logger::log(&msg);
                         all_tracks.extend(tracks);
                     }
                 }
                 Err(e) => {
-                    eprintln!(
+                    let msg = format!(
                         "Error loading songs from {}: {}",
                         playlist_file.display(),
                         e
                     );
+                    eprintln!("{}", msg);
+                    logger::log(&msg);
                 }
             }
         }
@@ -144,6 +160,8 @@ fn load_songs_from_file(playlist_file: &Path, music_dir: &Path) -> Result<Vec<Pa
         // Try to find a matching file
         if let Some(matched_path) = find_matching_song_optimized(music_dir, query) {
             found_tracks.push(matched_path);
+        } else {
+            logger::log(&format!("Track not found: {}", query));
         }
     }
 

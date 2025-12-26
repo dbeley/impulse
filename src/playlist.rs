@@ -2,6 +2,8 @@ use anyhow::{Context, Result, anyhow};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::logger;
+
 #[derive(Debug, Clone)]
 pub struct Playlist {
     pub name: String,
@@ -96,8 +98,17 @@ impl PlaylistManager {
         self.playlists.clear();
 
         if !self.playlist_dir.exists() {
+            logger::log(&format!(
+                "Playlist directory does not exist: {}",
+                self.playlist_dir.display()
+            ));
             return;
         }
+
+        logger::log(&format!(
+            "Loading playlists from: {}",
+            self.playlist_dir.display()
+        ));
 
         if let Ok(entries) = fs::read_dir(&self.playlist_dir) {
             for entry in entries.flatten() {
@@ -105,8 +116,22 @@ impl PlaylistManager {
                 if path.is_file() {
                     if let Some(ext) = path.extension() {
                         if ext == "m3u" || ext == "m3u8" {
-                            if let Ok(playlist) = Playlist::load(&path) {
-                                self.playlists.push(playlist);
+                            match Playlist::load(&path) {
+                                Ok(playlist) => {
+                                    logger::log(&format!(
+                                        "Loaded playlist: {} ({} tracks)",
+                                        playlist.name,
+                                        playlist.tracks.len()
+                                    ));
+                                    self.playlists.push(playlist);
+                                }
+                                Err(e) => {
+                                    logger::log(&format!(
+                                        "Failed to load playlist from {}: {}",
+                                        path.display(),
+                                        e
+                                    ));
+                                }
                             }
                         }
                     }

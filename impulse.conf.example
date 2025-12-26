@@ -4,8 +4,11 @@
 # Directory where your music is stored (default: ~/Music)
 # music_dir = "/home/user/Music"
 
-# Override directory where playlists will be stored (default: ~/.config/playlists)
+# Override directory where playlists will be stored (default: ~/.local/share/impulse/playlists)
 # playlist_dir = "/home/user/.local/share/impulse/playlists"
+
+# Override log file location (default: ~/.local/share/impulse/impulse.log)
+# log_file = "/home/user/.local/share/impulse/impulse.log"
 
 # Default volume (0.0 to 1.0)
 volume = 0.5
