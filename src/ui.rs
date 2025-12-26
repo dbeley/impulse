@@ -159,11 +159,12 @@ impl App {
         for track in tracks {
             self.queue.add(track);
         }
-        // Switch to Now Playing tab and start playing first track
+        // Switch to Now Playing tab but start paused
         if !self.queue.is_empty() {
             self.current_tab = Tab::NowPlaying;
             if let Some(track) = self.queue.current() {
                 let _ = self.player.play(track.clone());
+                self.player.pause();
                 self.track_play_time = Arc::new(Mutex::new(Some(SystemTime::now())));
                 // Update Last.fm now playing if enabled
                 if self.lastfm_scrobbler.is_enabled() {
@@ -369,6 +370,7 @@ impl App {
                         if let Err(e) = self.player.play(track.clone()) {
                             self.set_status(format!("Error playing: {}", e));
                         } else {
+                            self.player.pause();
                             self.start_track(&track);
                         }
                     }
