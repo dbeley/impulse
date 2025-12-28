@@ -125,6 +125,14 @@ impl App {
         // Initialize Last.fm scrobbler
         let lastfm_scrobbler = LastfmScrobbler::new(config.lastfm.as_ref());
 
+        // If queue was loaded from JSON and has tracks, load the current track but start paused
+        if !queue.is_empty() {
+            if let Some(track) = queue.current() {
+                let _ = player.play(track.clone());
+                player.pause();
+            }
+        }
+
         Ok(Self {
             player,
             browser,
