@@ -62,7 +62,7 @@ impl Tab {
                 "Keys: j/k/↑/↓=nav, Enter=jump, ←/→=seek, d=delete, K/J=move, c=clear, S=save-queue, Space/p=play/pause, >=next, <=prev, r=random, Tab/1-3=switch-tab, /=search, q=quit"
             }
             Tab::Playlists => {
-                "Keys: j/k/↑/↓=nav, l/Enter=add-to-queue, r=reload, Space/p=play/pause, >=next, <=prev, Tab/1-3=switch-tab, /=search, q=quit"
+                "Keys: j/k/↑/↓=nav, l/Enter=add-to-queue, Space/p=play/pause, >=next, <=prev, Tab/1-3=switch-tab, /=search, q=quit"
             }
         }
     }
@@ -278,10 +278,11 @@ impl App {
                     self.set_status(String::from("Resumed"));
                 } else if let Some(track) = self.queue.current() {
                     let track_clone = track.clone();
+                    let display_path = track_clone.display().to_string();
                     if let Err(e) = self.player.play(track_clone.clone()) {
                         self.set_status(format!("Error playing: {}", e));
                     } else {
-                        self.set_status(format!("Playing: {}", track_clone.display()));
+                        self.set_status(format!("Playing: {}", display_path));
                         self.start_track(&track_clone);
                     }
                 }
@@ -438,10 +439,11 @@ impl App {
 
                 if let Some(track) = self.queue.jump_to(self.queue_selected) {
                     let track_clone = track.clone();
+                    let display_path = track_clone.display().to_string();
                     if let Err(e) = self.player.play(track_clone.clone()) {
                         self.set_status(format!("Error playing: {}", e));
                     } else {
-                        self.set_status(format!("Playing: {}", track_clone.display()));
+                        self.set_status(format!("Playing: {}", display_path));
                         self.start_track(&track_clone);
                     }
                 }
@@ -547,10 +549,6 @@ impl App {
                     self.queue.add_multiple(playlist.tracks.clone());
                     self.set_status(format!("Added playlist '{}' to queue", playlist.name));
                 }
-            }
-            KeyCode::Char('r') => {
-                self.playlist_manager.load_playlists();
-                self.set_status(String::from("Playlists reloaded"));
             }
             _ => {}
         }
@@ -755,10 +753,11 @@ impl App {
 
         if let Some(track) = self.queue.next() {
             let track_clone = track.clone();
+            let display_path = track_clone.display().to_string();
             if let Err(e) = self.player.play(track_clone.clone()) {
                 self.set_status(format!("Error playing: {}", e));
             } else {
-                self.set_status(format!("Playing: {}", track_clone.display()));
+                self.set_status(format!("Playing: {}", display_path));
                 self.start_track(&track_clone);
                 // Sync queue selection to current playing track
                 if let Some(current_idx) = self.queue.current_index() {
@@ -774,10 +773,11 @@ impl App {
 
         if let Some(track) = self.queue.prev() {
             let track_clone = track.clone();
+            let display_path = track_clone.display().to_string();
             if let Err(e) = self.player.play(track_clone.clone()) {
                 self.set_status(format!("Error playing: {}", e));
             } else {
-                self.set_status(format!("Playing: {}", track_clone.display()));
+                self.set_status(format!("Playing: {}", display_path));
                 self.start_track(&track_clone);
                 // Sync queue selection to current playing track
                 if let Some(current_idx) = self.queue.current_index() {
