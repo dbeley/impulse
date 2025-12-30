@@ -168,6 +168,21 @@ fn load_songs_from_file(playlist_file: &Path, music_dir: &Path) -> Result<Vec<Pa
     Ok(found_tracks)
 }
 
+fn normalize_for_matching(s: &str) -> String {
+    s.to_lowercase()
+        .replace(
+            &['\u{2019}', '\'', '\u{201c}', '\u{201d}', '"', '`'][..],
+            "",
+        )
+        .replace('&', "and")
+        .chars()
+        .filter(|c| c.is_alphanumeric() || c.is_whitespace())
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<&str>>()
+        .join(" ")
+}
+
 fn find_matching_song_optimized(music_dir: &Path, query: &str) -> Option<PathBuf> {
     // Parse "Artist - Song" format
     let parts: Vec<&str> = query.split('-').map(|s| s.trim()).collect();
@@ -175,9 +190,9 @@ fn find_matching_song_optimized(music_dir: &Path, query: &str) -> Option<PathBuf
         return None;
     }
 
-    let artist = parts[0].to_lowercase();
+    let artist = normalize_for_matching(parts[0]);
     let song = if parts.len() > 1 {
-        parts[1..].join("-").to_lowercase()
+        normalize_for_matching(&parts[1..].join("-"))
     } else {
         return None; // Need both artist and song
     };
@@ -190,7 +205,7 @@ fn find_matching_song_optimized(music_dir: &Path, query: &str) -> Option<PathBuf
             let path = entry.path();
             if path.is_dir() {
                 if let Some(dir_name) = path.file_name().and_then(|n| n.to_str()) {
-                    let dir_name_normalized = dir_name.to_lowercase();
+                    let dir_name_normalized = normalize_for_matching(dir_name);
 
                     // Check if directory name contains artist name
                     if dir_name_normalized.contains(&artist) {
@@ -215,7 +230,7 @@ fn find_matching_song_optimized(music_dir: &Path, query: &str) -> Option<PathBuf
             let path = entry.path();
             if path.is_file() && browser::is_audio_file(path) {
                 if let Some(filename) = path.file_stem().and_then(|s| s.to_str()) {
-                    let filename_normalized = filename.to_lowercase();
+                    let filename_normalized = normalize_for_matching(filename);
 
                     // Calculate match score based on song title
                     if filename_normalized.contains(&song) {
@@ -404,5 +419,82 @@ mod tests {
         let result = find_matching_song_optimized(&music_dir, "The Third Artist - best song");
         assert!(result.is_some());
         assert!(result.unwrap().to_string_lossy().contains("best song"));
+    }
+
+    #[test]
+    fn test_normalize_for_matching_lowercase() {
+        assert_eq!(normalize_for_matching("HELLO WORLD"), "hello world");
+        assert_eq!(normalize_for_matching("MiXeD CaSe"), "mixed case");
+    }
+
+    #[test]
+    fn test_normalize_for_matching_quotes() {
+        assert_eq!(normalize_for_matching("don't"), "dont");
+        assert_eq!(normalize_for_matching("don't"), "dont");
+        assert_eq!(normalize_for_matching("say \"hello\""), "say hello");
+        assert_eq!(normalize_for_matching("\u{201c}quoted\u{201d}"), "quoted");
+        assert_eq!(
+            normalize_for_matching("\u{201c}also quoted\u{201d}"),
+            "also quoted"
+        );
+        assert_eq!(normalize_for_matching("`backtick`"), "backtick");
+    }
+
+    #[test]
+    fn test_normalize_for_matching_ampersand() {
+        assert_eq!(normalize_for_matching("rock & roll"), "rock and roll");
+        assert_eq!(normalize_for_matching("R&B"), "randb");
+        assert_eq!(normalize_for_matching("A & B & C"), "a and b and c");
+    }
+
+    #[test]
+    fn test_normalize_for_matching_special_chars() {
+        assert_eq!(normalize_for_matching("hello@world"), "helloworld");
+        assert_eq!(normalize_for_matching("test#123"), "test123");
+        assert_eq!(normalize_for_matching("a/b/c"), "abc");
+        assert_eq!(normalize_for_matching("hello!world?"), "helloworld");
+    }
+
+    #[test]
+    fn test_normalize_for_matching_whitespace() {
+        assert_eq!(normalize_for_matching("hello   world"), "hello world");
+        assert_eq!(normalize_for_matching("  trim  me  "), "trim me");
+        assert_eq!(normalize_for_matching("a\tb\nc"), "a b c");
+    }
+
+    #[test]
+    fn test_normalize_for_matching_alphanumeric() {
+        assert_eq!(normalize_for_matching("test123"), "test123");
+        assert_eq!(normalize_for_matching("abc 123 xyz 789"), "abc 123 xyz 789");
+    }
+
+    #[test]
+    fn test_normalize_for_matching_combined() {
+        assert_eq!(
+            normalize_for_matching("The Beatles' \"Hey Jude\" & More"),
+            "the beatles hey jude and more"
+        );
+        assert_eq!(
+            normalize_for_matching("AC/DC - Back in Black (Live)"),
+            "acdc back in black live"
+        );
+        assert_eq!(
+            normalize_for_matching("It's a   Beautiful  Day!"),
+            "its a beautiful day"
+        );
+    }
+
+    #[test]
+    fn test_normalize_for_matching_empty() {
+        assert_eq!(normalize_for_matching(""), "");
+        assert_eq!(normalize_for_matching("   "), "");
+        assert_eq!(normalize_for_matching("@#$%"), "");
+    }
+
+    #[test]
+    fn test_normalize_for_matching_unicode() {
+        assert_eq!(normalize_for_matching("café"), "caf");
+        assert_eq!(normalize_for_matching("naïve"), "nave");
+        assert_eq!(normalize_for_matching("Björk"), "bjrk");
     }
 }
