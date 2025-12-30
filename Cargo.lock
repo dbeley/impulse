@@ -1125,6 +1125,7 @@ dependencies = [
  "symphonia-adapter-libopus",
  "tempfile",
  "toml",
+ "unicode-normalization",
  "walkdir",
  "webbrowser",
 ]

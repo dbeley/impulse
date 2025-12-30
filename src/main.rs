@@ -19,6 +19,7 @@ use ratatui::{Terminal, backend::CrosstermBackend};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use unicode_normalization::UnicodeNormalization;
 use walkdir::WalkDir;
 
 #[derive(Parser, Debug)]
@@ -169,14 +170,16 @@ fn load_songs_from_file(playlist_file: &Path, music_dir: &Path) -> Result<Vec<Pa
 }
 
 fn normalize_for_matching(s: &str) -> String {
-    s.to_lowercase()
+    s.nfd()
+        .collect::<String>()
+        .to_lowercase()
         .replace(
             &['\u{2019}', '\'', '\u{201c}', '\u{201d}', '"', '`'][..],
             "",
         )
         .replace('&', "and")
         .chars()
-        .filter(|c| c.is_alphanumeric() || c.is_whitespace())
+        .filter(|c| c.is_ascii_alphanumeric() || c.is_whitespace())
         .collect::<String>()
         .split_whitespace()
         .collect::<Vec<&str>>()
@@ -493,8 +496,17 @@ mod tests {
 
     #[test]
     fn test_normalize_for_matching_unicode() {
-        assert_eq!(normalize_for_matching("café"), "caf");
-        assert_eq!(normalize_for_matching("naïve"), "nave");
-        assert_eq!(normalize_for_matching("Björk"), "bjrk");
+        assert_eq!(normalize_for_matching("café"), "cafe");
+        assert_eq!(normalize_for_matching("naïve"), "naive");
+        assert_eq!(normalize_for_matching("Björk"), "bjork");
+        // Test that both accented and non-accented versions match
+        assert_eq!(
+            normalize_for_matching("café"),
+            normalize_for_matching("cafe")
+        );
+        assert_eq!(
+            normalize_for_matching("naïve"),
+            normalize_for_matching("naive")
+        );
     }
 }
