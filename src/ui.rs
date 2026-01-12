@@ -1009,12 +1009,7 @@ impl App {
             })
             .collect();
 
-        let random_indicator = if self.queue.is_random() {
-            " [RANDOM]"
-        } else {
-            ""
-        };
-        let title = format!("Queue ({} tracks){}", tracks.len(), random_indicator);
+        let title = format!("Queue ({} tracks)", tracks.len());
         let list = List::new(items)
             .block(Block::default().borders(Borders::ALL).title(title))
             .highlight_style(Style::default().add_modifier(Modifier::REVERSED));
