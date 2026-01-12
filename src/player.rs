@@ -210,7 +210,7 @@ impl Player {
             .map(|s| s.is_paused())
             .unwrap_or(false);
 
-        if is_paused {
+        let elapsed = if is_paused {
             // When paused, return the stored elapsed time
             paused_elapsed
         } else if let Some(start_time) = playback_start_time {
@@ -221,6 +221,19 @@ impl Player {
             paused_elapsed + current_elapsed
         } else {
             Duration::from_secs(0)
+        };
+
+        // Clamp elapsed time to the track's actual duration to prevent it from exceeding
+        // the max length when the queue ends
+        if let Some(metadata) = self.current_metadata() {
+            if let Some(duration_secs) = metadata.duration_secs {
+                let max_duration = Duration::from_secs(duration_secs);
+                elapsed.min(max_duration)
+            } else {
+                elapsed
+            }
+        } else {
+            elapsed
         }
     }
 
