@@ -56,13 +56,13 @@ impl Tab {
     fn help_text(&self) -> &str {
         match self {
             Tab::Browser => {
-                "Keys: j/k/↑/↓=nav, l/→/Enter=select, h/←=back, a=add, A=add-all, Space/p=play/pause, >=next, <=prev, r=random, Tab/1-3=switch-tab, /=search, q=quit"
+                "Keys: j/k/↑/↓=nav, l/→/Enter=select, h/←=back, a=add, A=add-all, o=jump-to-playing, Space/p=play/pause, >=next, <=prev, r=random, R=repeat, Tab/1-3=switch-tab, /=search, q=quit"
             }
             Tab::NowPlaying => {
-                "Keys: j/k/↑/↓=nav, Enter=jump, ←/→=seek, d=delete, K/J=move, c=clear, S=save-queue, Space/p=play/pause, >=next, <=prev, r=random, Tab/1-3=switch-tab, /=search, q=quit"
+                "Keys: j/k/↑/↓=nav, Enter=jump, o=jump-to-playing, ←/→=seek, d=delete, K/J=move, c=clear, S=save-queue, Space/p=play/pause, >=next, <=prev, r=random, R=repeat, Tab/1-3=switch-tab, /=search, q=quit"
             }
             Tab::Playlists => {
-                "Keys: j/k/↑/↓=nav, l/Enter=add-to-queue, Space/p=play/pause, >=next, <=prev, Tab/1-3=switch-tab, /=search, q=quit"
+                "Keys: j/k/↑/↓=nav, l/Enter=add-to-queue, Space/p=play/pause, >=next, <=prev, r=random, R=repeat, Tab/1-3=switch-tab, /=search, q=quit"
             }
         }
     }
@@ -210,9 +210,17 @@ impl App {
                 self.scrobble_if_needed();
                 self.play_next();
             } else if self.player.is_finished() && self.player.current_track().is_some() {
-                // Track finished but queue is empty, scrobble and stop player
-                self.scrobble_if_needed();
-                self.player.stop();
+                // Track finished but queue is empty
+                use crate::queue::RepeatMode;
+                if self.queue.repeat_mode() != RepeatMode::Off {
+                    // If repeat is enabled, keep playing
+                    self.scrobble_if_needed();
+                    self.play_next();
+                } else {
+                    // Otherwise scrobble and stop player
+                    self.scrobble_if_needed();
+                    self.player.stop();
+                }
             }
 
             if self.should_quit {
@@ -301,6 +309,18 @@ impl App {
                     "Random mode disabled"
                 };
                 self.set_status(String::from(status));
+            }
+            KeyCode::Char('R') => {
+                self.queue.cycle_repeat_mode();
+                let status = match self.queue.repeat_mode() {
+                    crate::queue::RepeatMode::Off => "Repeat: Off",
+                    crate::queue::RepeatMode::Queue => "Repeat: Queue",
+                    crate::queue::RepeatMode::Track => "Repeat: Track",
+                };
+                self.set_status(String::from(status));
+            }
+            KeyCode::Char('o') => {
+                self.jump_to_playing();
             }
             KeyCode::Char('s') => {
                 self.scrobble_if_needed();
@@ -751,7 +771,24 @@ impl App {
         // Scrobble current track if it should be scrobbled
         self.scrobble_if_needed();
 
-        if let Some(track) = self.queue.next() {
+        // Check repeat mode
+        use crate::queue::RepeatMode;
+        let repeat_mode = self.queue.repeat_mode();
+
+        if repeat_mode == RepeatMode::Track {
+            // Repeat current track
+            if let Some(track) = self.queue.current() {
+                let track_clone = track.clone();
+                let display_path = track_clone.display().to_string();
+                if let Err(e) = self.player.play(track_clone.clone()) {
+                    self.set_status(format!("Error playing: {}", e));
+                } else {
+                    self.set_status(format!("Repeating: {}", display_path));
+                    self.start_track(&track_clone);
+                }
+            }
+        } else if let Some(track) = self.queue.next() {
+            // Normal next or random mode
             let track_clone = track.clone();
             let display_path = track_clone.display().to_string();
             if let Err(e) = self.player.play(track_clone.clone()) {
@@ -762,6 +799,22 @@ impl App {
                 // Sync queue selection to current playing track
                 if let Some(current_idx) = self.queue.current_index() {
                     self.queue_selected = current_idx;
+                }
+            }
+        } else if repeat_mode == RepeatMode::Queue {
+            // Reached end of queue, restart from beginning
+            if let Some(track) = self.queue.restart() {
+                let track_clone = track.clone();
+                let display_path = track_clone.display().to_string();
+                if let Err(e) = self.player.play(track_clone.clone()) {
+                    self.set_status(format!("Error playing: {}", e));
+                } else {
+                    self.set_status(format!("Restarting queue: {}", display_path));
+                    self.start_track(&track_clone);
+                    // Sync queue selection to current playing track
+                    if let Some(current_idx) = self.queue.current_index() {
+                        self.queue_selected = current_idx;
+                    }
                 }
             }
         }
@@ -784,6 +837,40 @@ impl App {
                     self.queue_selected = current_idx;
                 }
             }
+        }
+    }
+
+    fn jump_to_playing(&mut self) {
+        if let Some(current_track) = self.player.current_track() {
+            match self.current_tab {
+                Tab::Browser => {
+                    // Navigate to the directory containing the playing track
+                    if let Some(parent) = current_track.parent() {
+                        self.browser.navigate_to(parent.to_path_buf());
+                        // Select the currently playing file in the browser
+                        self.browser.select_entry_by_path(&current_track);
+                        self.set_status(String::from("Jumped to currently playing track"));
+                    } else {
+                        self.set_status(String::from("Cannot navigate to track location"));
+                    }
+                }
+                Tab::NowPlaying => {
+                    // Scroll queue to highlight the currently playing track
+                    if let Some(current_idx) = self.queue.current_index() {
+                        self.queue_selected = current_idx;
+                        self.set_status(String::from("Jumped to currently playing track"));
+                    } else {
+                        self.set_status(String::from("No track currently playing in queue"));
+                    }
+                }
+                Tab::Playlists => {
+                    self.set_status(String::from(
+                        "Jump to playing only works in Browser/Now Playing tabs",
+                    ));
+                }
+            }
+        } else {
+            self.set_status(String::from("No track currently playing"));
         }
     }
 
@@ -1080,6 +1167,24 @@ impl App {
             Span::styled("Volume: ", Style::default().fg(Color::Cyan)),
             Span::raw(format!("{:.0}%", self.config.volume * 100.0)),
         ]));
+
+        // Show random mode indicator
+        if self.queue.is_random() {
+            text.push(Line::from(vec![
+                Span::styled("Random: ", Style::default().fg(Color::Cyan)),
+                Span::styled("On", Style::default().fg(Color::Green)),
+            ]));
+        }
+
+        // Show repeat mode indicator
+        use crate::queue::RepeatMode;
+        let repeat_mode = self.queue.repeat_mode();
+        if repeat_mode != RepeatMode::Off {
+            text.push(Line::from(vec![
+                Span::styled("Repeat: ", Style::default().fg(Color::Cyan)),
+                Span::styled(repeat_mode.as_str(), Style::default().fg(Color::Green)),
+            ]));
+        }
 
         let paragraph =
             Paragraph::new(text).block(Block::default().borders(Borders::ALL).title("Player"));

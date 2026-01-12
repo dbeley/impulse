@@ -4,11 +4,39 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum RepeatMode {
+    #[default]
+    Off,
+    Queue,
+    Track,
+}
+
+impl RepeatMode {
+    pub fn next(&self) -> Self {
+        match self {
+            RepeatMode::Off => RepeatMode::Queue,
+            RepeatMode::Queue => RepeatMode::Track,
+            RepeatMode::Track => RepeatMode::Off,
+        }
+    }
+
+    pub fn as_str(&self) -> &str {
+        match self {
+            RepeatMode::Off => "Off",
+            RepeatMode::Queue => "Queue",
+            RepeatMode::Track => "Track",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Queue {
     tracks: Vec<PathBuf>,
     current_index: Option<usize>,
     random_mode: bool,
+    #[serde(default)]
+    repeat_mode: RepeatMode,
     #[serde(skip)]
     played_indices: Vec<usize>,
 }
@@ -19,6 +47,7 @@ impl Queue {
             tracks: Vec::new(),
             current_index: None,
             random_mode: false,
+            repeat_mode: RepeatMode::Off,
             played_indices: Vec::new(),
         }
     }
@@ -151,11 +180,40 @@ impl Queue {
         self.random_mode = !self.random_mode;
         if self.random_mode {
             self.played_indices.clear();
+            // Disable track repeat when enabling random mode
+            if self.repeat_mode == RepeatMode::Track {
+                self.repeat_mode = RepeatMode::Off;
+            }
         }
     }
 
     pub fn is_random(&self) -> bool {
         self.random_mode
+    }
+
+    pub fn cycle_repeat_mode(&mut self) {
+        self.repeat_mode = self.repeat_mode.next();
+        // Disable random mode when enabling track repeat
+        if self.repeat_mode == RepeatMode::Track && self.random_mode {
+            self.random_mode = false;
+            self.played_indices.clear();
+        }
+    }
+
+    pub fn repeat_mode(&self) -> RepeatMode {
+        self.repeat_mode
+    }
+
+    pub fn restart(&mut self) -> Option<&PathBuf> {
+        if !self.tracks.is_empty() {
+            self.current_index = Some(0);
+            if self.random_mode {
+                self.played_indices.clear();
+            }
+            self.current()
+        } else {
+            None
+        }
     }
 
     pub fn move_up(&mut self, index: usize) {
