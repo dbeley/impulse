@@ -12,6 +12,7 @@ mod ui;
 use anyhow::Result;
 use clap::Parser;
 use crossterm::{
+    event::{DisableMouseCapture, EnableMouseCapture},
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
@@ -97,7 +98,7 @@ fn main() -> Result<()> {
     // Setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen)?;
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
@@ -113,7 +114,7 @@ fn main() -> Result<()> {
         Err(e) => {
             // Restore terminal before showing error
             disable_raw_mode()?;
-            execute!(io::stdout(), LeaveAlternateScreen)?;
+            execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture)?;
             eprintln!("\nError initializing audio player: {}", e);
             eprintln!("Make sure you have audio devices configured on your system.");
             eprintln!("\nFor headless systems or systems without audio:");
@@ -127,7 +128,11 @@ fn main() -> Result<()> {
 
     // Restore terminal
     disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+    execute!(
+        terminal.backend_mut(),
+        LeaveAlternateScreen,
+        DisableMouseCapture
+    )?;
     terminal.show_cursor()?;
 
     if let Err(err) = res {

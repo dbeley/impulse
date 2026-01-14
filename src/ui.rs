@@ -5,7 +5,7 @@ use crate::player::Player;
 use crate::playlist::PlaylistManager;
 use crate::queue::Queue;
 use anyhow::Result;
-use crossterm::event::{self, Event, KeyCode, KeyEvent};
+use crossterm::event::{self, Event, KeyCode, KeyEvent, MouseEvent, MouseEventKind};
 use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use ratatui::{
@@ -107,6 +107,7 @@ pub struct App {
     queue_state: ListState,
     playlist_state: ListState,
     search_state: ListState,
+    progress_bar_area: Option<Rect>,
 }
 
 impl App {
@@ -160,6 +161,7 @@ impl App {
             queue_state: ListState::default(),
             playlist_state: ListState::default(),
             search_state: ListState::default(),
+            progress_bar_area: None,
         })
     }
 
@@ -189,8 +191,10 @@ impl App {
             terminal.draw(|f| self.draw(f))?;
 
             if event::poll(Duration::from_millis(100))? {
-                if let Event::Key(key) = event::read()? {
-                    self.handle_key(key)?;
+                match event::read()? {
+                    Event::Key(key) => self.handle_key(key)?,
+                    Event::Mouse(mouse) => self.handle_mouse(mouse)?,
+                    _ => {}
                 }
             }
 
@@ -241,6 +245,43 @@ impl App {
         Ok(())
     }
 
+    fn handle_mouse(&mut self, mouse: MouseEvent) -> Result<()> {
+        // Only handle left clicks
+        if let MouseEventKind::Down(crossterm::event::MouseButton::Left) = mouse.kind {
+            // Check if click is within progress bar area
+            if let Some(area) = self.progress_bar_area {
+                if mouse.row == area.y
+                    && mouse.column >= area.x
+                    && mouse.column < area.x + area.width
+                {
+                    // Toggle play/pause
+                    self.toggle_play_pause()?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn toggle_play_pause(&mut self) -> Result<()> {
+        if self.player.is_playing() {
+            self.player.pause();
+            self.set_status(String::from("Paused"));
+        } else if self.player.is_paused() {
+            self.player.resume();
+            self.set_status(String::from("Resumed"));
+        } else if let Some(track) = self.queue.current() {
+            let track_clone = track.clone();
+            let display_path = track_clone.display().to_string();
+            if let Err(e) = self.player.play(track_clone.clone()) {
+                self.set_status(format!("Error playing: {}", e));
+            } else {
+                self.set_status(format!("Playing: {}", display_path));
+                self.start_track(&track_clone);
+            }
+        }
+        Ok(())
+    }
+
     fn set_status(&mut self, message: String) {
         self.status_message = message;
         self.status_message_time = Some(SystemTime::now());
@@ -278,22 +319,7 @@ impl App {
                 self.command_input.clear();
             }
             KeyCode::Char(' ' | 'p') => {
-                if self.player.is_playing() {
-                    self.player.pause();
-                    self.set_status(String::from("Paused"));
-                } else if self.player.is_paused() {
-                    self.player.resume();
-                    self.set_status(String::from("Resumed"));
-                } else if let Some(track) = self.queue.current() {
-                    let track_clone = track.clone();
-                    let display_path = track_clone.display().to_string();
-                    if let Err(e) = self.player.play(track_clone.clone()) {
-                        self.set_status(format!("Error playing: {}", e));
-                    } else {
-                        self.set_status(format!("Playing: {}", display_path));
-                        self.start_track(&track_clone);
-                    }
-                }
+                self.toggle_play_pause()?;
             }
             KeyCode::Char('>') => {
                 self.play_next();
@@ -1318,7 +1344,10 @@ impl App {
         f.render_stateful_widget(list, area, &mut self.search_state);
     }
 
-    fn draw_progress_bar(&self, f: &mut Frame, area: Rect) {
+    fn draw_progress_bar(&mut self, f: &mut Frame, area: Rect) {
+        // Store the progress bar area for mouse click detection
+        self.progress_bar_area = Some(area);
+
         // Get playback status icon
         let status_icon = if self.player.is_playing() {
             "▶"
