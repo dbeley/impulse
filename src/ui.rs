@@ -5,7 +5,7 @@ use crate::player::Player;
 use crate::playlist::PlaylistManager;
 use crate::queue::Queue;
 use anyhow::Result;
-use crossterm::event::{self, Event, KeyCode, KeyEvent, MouseEvent, MouseEventKind};
+use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use ratatui::{
@@ -56,7 +56,7 @@ impl Tab {
     fn help_text(&self) -> &str {
         match self {
             Tab::Browser => {
-                "Keys: j/k/↑/↓=nav, l/→/Enter=select, h/←=back, a=add, A=add-all, o=jump-to-playing, Space/p=play/pause, >=next, <=prev, r=random, R=repeat, Tab/1-3=switch-tab, /=search, q=quit"
+                "Keys: j/k/↑/↓=nav, l/→/Enter=select, h/←=back, a=add, A=add-all, o=jump-to-playing, Space/p=play/pause, >=next, <=prev, r=random, R=repeat, Tab/1-3=switch-tab, /=search, Ctrl+F=recursive-search, q=quit"
             }
             Tab::NowPlaying => {
                 "Keys: j/k/↑/↓=nav, Enter=jump, o=jump-to-playing, ←/→=seek, d=delete, K/J=move, c=clear, S=save-queue, Space/p=play/pause, >=next, <=prev, r=random, R=repeat, Tab/1-3=switch-tab, /=search, q=quit"
@@ -71,6 +71,7 @@ impl Tab {
 pub enum InputMode {
     Normal,
     Search,
+    RecursiveSearch,
     Command,
 }
 
@@ -240,6 +241,7 @@ impl App {
         match self.input_mode {
             InputMode::Normal => self.handle_normal_mode(key)?,
             InputMode::Search => self.handle_search_mode(key)?,
+            InputMode::RecursiveSearch => self.handle_recursive_search_mode(key)?,
             InputMode::Command => self.handle_command_mode(key)?,
         }
         Ok(())
@@ -312,6 +314,11 @@ impl App {
             }
             KeyCode::Char('/') => {
                 self.input_mode = InputMode::Search;
+                self.search_query.clear();
+            }
+            KeyCode::Char('f') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                // Ctrl+F for recursive search
+                self.input_mode = InputMode::RecursiveSearch;
                 self.search_query.clear();
             }
             KeyCode::Char(':') => {
@@ -647,6 +654,52 @@ impl App {
         Ok(())
     }
 
+    fn handle_recursive_search_mode(&mut self, key: KeyEvent) -> Result<()> {
+        match key.code {
+            KeyCode::Enter => {
+                if !self.search_results.is_empty() {
+                    if let Some(result) = self.search_results.get(self.search_result_selected) {
+                        // For recursive search, navigate to the parent directory and select the file
+                        if let Some(parent) = result.path.parent() {
+                            self.browser.navigate_to(parent.to_path_buf());
+                            self.browser.select_entry_by_path(&result.path);
+                            self.status_message = format!("Selected: {}", result.name);
+                        }
+                    }
+                    self.input_mode = InputMode::Normal;
+                    self.clear_search_results();
+                } else {
+                    self.status_message = format!("No match found for: {}", self.search_query);
+                    self.input_mode = InputMode::Normal;
+                }
+            }
+            KeyCode::Esc => {
+                self.input_mode = InputMode::Normal;
+                self.search_query.clear();
+                self.clear_search_results();
+            }
+            KeyCode::Char(c) => {
+                self.search_query.push(c);
+                self.update_recursive_search_results();
+            }
+            KeyCode::Backspace => {
+                self.search_query.pop();
+                self.update_recursive_search_results();
+            }
+            KeyCode::Down => {
+                if !self.search_results.is_empty() {
+                    self.search_result_selected =
+                        (self.search_result_selected + 1).min(self.search_results.len() - 1);
+                }
+            }
+            KeyCode::Up => {
+                self.search_result_selected = self.search_result_selected.saturating_sub(1);
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
     fn handle_command_mode(&mut self, key: KeyEvent) -> Result<()> {
         match key.code {
             KeyCode::Enter => {
@@ -696,6 +749,52 @@ impl App {
                 results.push(SearchResult {
                     path: path.to_path_buf(),
                     name,
+                    score,
+                });
+            }
+        }
+
+        // Sort by score (highest first)
+        results.sort_by(|a, b| b.score.cmp(&a.score).then(a.name.cmp(&b.name)));
+
+        const MAX_RESULTS: usize = 50;
+        if results.len() > MAX_RESULTS {
+            results.truncate(MAX_RESULTS);
+        }
+
+        self.search_results = results;
+        // Auto-select the most relevant result (first one with highest score)
+        self.search_result_selected = 0;
+    }
+
+    fn update_recursive_search_results(&mut self) {
+        let query = self.search_query.trim();
+        if query.is_empty() {
+            self.search_results.clear();
+            self.search_result_selected = 0;
+            return;
+        }
+
+        let matcher = SkimMatcherV2::default();
+        let mut results = Vec::new();
+
+        // Get all audio files recursively from current directory
+        let audio_files = self.browser.get_all_audio_files();
+        let current_dir = self.browser.current_dir();
+
+        for file_path in audio_files {
+            // Get relative path from current directory for display
+            let relative_path = file_path
+                .strip_prefix(current_dir)
+                .unwrap_or(&file_path)
+                .to_string_lossy()
+                .to_string();
+
+            // Match against the full relative path
+            if let Some(score) = matcher.fuzzy_match(&relative_path, query) {
+                results.push(SearchResult {
+                    path: file_path,
+                    name: relative_path,
                     score,
                 });
             }
@@ -926,7 +1025,11 @@ impl App {
 
         self.draw_tabs(f, chunks[0]);
         self.draw_content(f, chunks[1]);
-        if matches!(self.input_mode, InputMode::Search) && !self.search_results.is_empty() {
+        if matches!(
+            self.input_mode,
+            InputMode::Search | InputMode::RecursiveSearch
+        ) && !self.search_results.is_empty()
+        {
             self.draw_search_overlay(f);
         }
 
@@ -1318,27 +1421,39 @@ impl App {
             .iter()
             .enumerate()
             .map(|(i, result)| {
-                let mut style = Style::default();
-                if i == self.search_result_selected {
-                    style = style.fg(Color::Yellow).add_modifier(Modifier::BOLD);
-                }
-
-                // Show icon for folders vs files
-                let prefix = if result.path.is_dir() {
-                    "📁 "
+                let style = if i == self.search_result_selected {
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD)
                 } else {
-                    "🎵 "
+                    Style::default()
                 };
-                let content = format!("{}{}", prefix, result.name);
+
+                // Use folder icon for directories, music note for files
+                let icon = if result.path.is_dir() { "📁" } else { "🎵" };
+                let content = format!("{} {}", icon, result.name);
                 ListItem::new(content).style(style)
             })
             .collect();
 
-        let list = List::new(items).block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title("Search Results"),
-        );
+        // Different title based on search mode
+        let title = if matches!(self.input_mode, InputMode::RecursiveSearch) {
+            format!(
+                "Recursive Search: {} ({} results)",
+                self.search_query,
+                self.search_results.len()
+            )
+        } else {
+            format!(
+                "Search: {} ({} results)",
+                self.search_query,
+                self.search_results.len()
+            )
+        };
+
+        let list = List::new(items)
+            .block(Block::default().borders(Borders::ALL).title(title))
+            .highlight_style(Style::default().add_modifier(Modifier::REVERSED));
 
         self.search_state.select(Some(self.search_result_selected));
         f.render_stateful_widget(list, area, &mut self.search_state);
@@ -1406,6 +1521,18 @@ impl App {
                 } else {
                     format!(
                         "Search: {} ({}/{} results, ↑/↓ navigate, Enter select, Esc cancel)",
+                        self.search_query,
+                        self.search_result_selected + 1,
+                        self.search_results.len()
+                    )
+                }
+            }
+            InputMode::RecursiveSearch => {
+                if self.search_results.is_empty() {
+                    format!("Recursive Search: {}", self.search_query)
+                } else {
+                    format!(
+                        "Recursive Search: {} ({}/{} results, ↑/↓ navigate, Enter select, Esc cancel)",
                         self.search_query,
                         self.search_result_selected + 1,
                         self.search_results.len()
