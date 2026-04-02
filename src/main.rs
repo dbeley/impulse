@@ -43,7 +43,7 @@ fn main() -> Result<()> {
     };
 
     // Initialize logger
-    if let Err(e) = logger::init_logger(config.log_file.clone()) {
+    if let Err(e) = logger::init_logger(&config.log_file) {
         eprintln!("Warning: Failed to initialize logger: {}", e);
     } else {
         logger::log("Impulse music player started");
@@ -155,9 +155,36 @@ fn load_songs_from_file(playlist_file: &Path, music_dir: &Path) -> Result<Vec<Pa
             continue;
         }
 
-        // Remove leading numbers and dots if present
-        let query =
-            line.trim_start_matches(|c: char| c.is_numeric() || c == '.' || c.is_whitespace());
+        // Remove leading numbers and dots if present (e.g. "1. Artist - Song" -> "Artist - Song")
+        // But be careful not to strip digits from artist names like "10cc"
+        let query = if line
+            .trim_start()
+            .chars()
+            .next()
+            .map_or(false, |c| c.is_ascii_digit())
+        {
+            // If line starts with a digit, only strip patterns like "1. " or "123. "
+            let trimmed = line.trim_start();
+            if let Some(dot_pos) = trimmed.find('.') {
+                // Check if there's whitespace after the dot
+                if trimmed[dot_pos + 1..]
+                    .chars()
+                    .next()
+                    .map_or(false, |c| c.is_whitespace())
+                {
+                    trimmed[dot_pos + 1..].trim_start()
+                } else {
+                    // No whitespace after dot, don't strip (e.g. "10cc - I'm Not in Love")
+                    trimmed
+                }
+            } else {
+                // No dot found, don't strip
+                trimmed
+            }
+        } else {
+            // Doesn't start with digit, don't strip
+            line.trim_start()
+        };
 
         if query.is_empty() {
             continue;
@@ -230,7 +257,7 @@ fn find_matching_song_optimized(music_dir: &Path, query: &str) -> Option<PathBuf
     for artist_dir in candidate_dirs {
         // Search up to 2 levels deep in artist directory (for album subdirectories)
         for entry in WalkDir::new(&artist_dir)
-            .max_depth(2)
+            .max_depth(5)
             .follow_links(true)
             .into_iter()
             .filter_map(|e| e.ok())
