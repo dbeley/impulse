@@ -36,8 +36,8 @@ impl TrackMetadata {
             mss,
             &FormatOptions::default(),
             &MetadataOptions {
-                limit_metadata_bytes: symphonia::core::meta::Limit::Maximum(usize::MAX),
-                limit_visual_bytes: symphonia::core::meta::Limit::Maximum(usize::MAX),
+                limit_metadata_bytes: symphonia::core::meta::Limit::Maximum(10 * 1024 * 1024), // 10 MB
+                limit_visual_bytes: symphonia::core::meta::Limit::Maximum(50 * 1024 * 1024), // 50 MB
             },
         )?;
 

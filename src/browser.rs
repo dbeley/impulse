@@ -213,16 +213,12 @@ impl Browser {
 }
 
 pub fn is_audio_file(path: &Path) -> bool {
-    if let Some(ext) = path.extension() {
-        if let Some(ext_str) = ext.to_str() {
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext_str| {
             matches!(
                 ext_str.to_lowercase().as_str(),
                 "mp3" | "flac" | "ogg" | "wav" | "m4a" | "aac" | "alac" | "opus"
             )
-        } else {
-            false
-        }
-    } else {
-        false
-    }
+        })
 }

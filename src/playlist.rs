@@ -24,8 +24,8 @@ impl Playlist {
 
     #[allow(dead_code)]
     pub fn load(path: &Path) -> Result<Self> {
-        let content =
-            fs::read_to_string(path).context(format!("Failed to read playlist: {:?}", path))?;
+        let content = fs::read_to_string(path)
+            .with_context(|| format!("Failed to read playlist: {path:?}"))?;
 
         let name = path
             .file_stem()
@@ -61,7 +61,7 @@ impl Playlist {
         }
 
         fs::write(&self.path, content)
-            .context(format!("Failed to save playlist: {:?}", self.path))?;
+            .with_context(|| format!("Failed to save playlist: {:?}", self.path))?;
 
         Ok(())
     }
