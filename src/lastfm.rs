@@ -81,7 +81,7 @@ impl LastfmScrobbler {
             // Store the track start time for later scrobbling
             let timestamp = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
-                .unwrap()
+                .unwrap_or_default()
                 .as_secs();
             *self.current_track_start.lock().unwrap() = Some(timestamp);
         }

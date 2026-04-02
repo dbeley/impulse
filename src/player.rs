@@ -1,8 +1,8 @@
+use crate::logger;
 use crate::metadata::TrackMetadata;
 use anyhow::{Context, Result};
 use rodio::{OutputStream, OutputStreamHandle, Sink, Source};
-use std::fs::File;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
@@ -50,21 +50,10 @@ impl Player {
         })
     }
 
-    pub fn play(&self, path: PathBuf) -> Result<()> {
-        let file =
-            File::open(&path).context(format!("Failed to open audio file: {}", path.display()))?;
-
-        let file_metadata = file
-            .metadata()
-            .context(format!("Failed to read file metadata: {}", path.display()))?;
-
-        if file_metadata.len() == 0 {
-            anyhow::bail!("Audio file is empty: {}", path.display());
-        }
-
+    pub fn play(&self, path: &Path) -> Result<()> {
         // Use custom Symphonia decoder for all formats to ensure consistent seek support
-        let symphonia_source = Self::decode_symphonia(&path)
-            .context(format!("Failed to decode audio file: {}", path.display()))?;
+        let symphonia_source = Self::decode_symphonia(path)
+            .with_context(|| format!("Failed to decode audio file: {}", path.display()))?;
         let source: Box<dyn Source<Item = i16> + Send> = Box::new(symphonia_source);
 
         let sink = Sink::try_new(&self.stream_handle).context("Failed to create audio sink")?;
@@ -72,10 +61,10 @@ impl Player {
         sink.append(source);
 
         // Read metadata from the track
-        let metadata = TrackMetadata::from_file(&path).ok();
+        let metadata = TrackMetadata::from_file(path).ok();
 
         *self.sink.lock().unwrap() = Some(sink);
-        *self.current_track.lock().unwrap() = Some(path);
+        *self.current_track.lock().unwrap() = Some(path.to_path_buf());
         *self.current_metadata.lock().unwrap() = metadata;
         *self.playback_start_time.lock().unwrap() = Some(SystemTime::now());
         *self.paused_elapsed.lock().unwrap() = Duration::from_secs(0);
@@ -83,14 +72,14 @@ impl Player {
         Ok(())
     }
 
-    fn decode_symphonia(path: &PathBuf) -> Result<impl Source<Item = i16> + Send + use<>> {
+    fn decode_symphonia(path: &Path) -> Result<impl Source<Item = i16> + Send + use<>> {
         // Create a media source stream from the file with seek support
         let file = std::fs::File::open(path)?;
         let mss = MediaSourceStream::new(Box::new(file), MediaSourceStreamOptions::default());
 
         // Create a hint to help the format registry
         let mut hint = Hint::new();
-        if let Some(extension) = path.extension().and_then(|e| e.to_str()) {
+        if let Some(extension) = path.extension().and_then(|e: &std::ffi::OsStr| e.to_str()) {
             hint.with_extension(extension);
         }
 
@@ -187,7 +176,7 @@ impl Player {
             .lock()
             .unwrap()
             .as_ref()
-            .map_or(true, rodio::Sink::empty)
+            .is_none_or(rodio::Sink::empty)
     }
 
     pub fn current_track(&self) -> Option<PathBuf> {
@@ -267,7 +256,7 @@ impl Player {
         let target_position = current + Duration::from_secs(seconds);
         if let Some(sink) = self.sink.lock().unwrap().as_ref() {
             if let Err(e) = sink.try_seek(target_position) {
-                eprintln!("Failed to seek: {:?}", e);
+                logger::log(&format!("Failed to seek forward: {e}"));
             } else {
                 // Update tracking after successful seek
                 *self.playback_start_time.lock().unwrap() = Some(SystemTime::now());
@@ -281,7 +270,7 @@ impl Player {
         let target_position = current.saturating_sub(Duration::from_secs(seconds));
         if let Some(sink) = self.sink.lock().unwrap().as_ref() {
             if let Err(e) = sink.try_seek(target_position) {
-                eprintln!("Failed to seek: {:?}", e);
+                logger::log(&format!("Failed to seek backward: {e}"));
             } else {
                 // Update tracking after successful seek
                 *self.playback_start_time.lock().unwrap() = Some(SystemTime::now());

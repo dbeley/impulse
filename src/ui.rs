@@ -130,7 +130,7 @@ impl App {
         // If queue was loaded from JSON and has tracks, load the current track but start paused
         if !queue.is_empty() {
             if let Some(track) = queue.current() {
-                let _ = player.play(track.clone());
+                let _ = player.play(&track);
                 player.pause();
             }
         }
@@ -174,7 +174,7 @@ impl App {
         if !self.queue.is_empty() {
             self.current_tab = Tab::NowPlaying;
             if let Some(track) = self.queue.current() {
-                let _ = self.player.play(track.clone());
+                let _ = self.player.play(&track);
                 self.player.pause();
                 self.track_play_time = Arc::new(Mutex::new(Some(SystemTime::now())));
                 // Update Last.fm now playing if enabled
@@ -274,7 +274,7 @@ impl App {
         } else if let Some(track) = self.queue.current() {
             let track_clone = track.clone();
             let display_path = track_clone.display().to_string();
-            if let Err(e) = self.player.play(track_clone.clone()) {
+            if let Err(e) = self.player.play(&track_clone) {
                 self.set_status(format!("Error playing: {}", e));
             } else {
                 self.set_status(format!("Playing: {}", display_path));
@@ -429,7 +429,7 @@ impl App {
                     self.set_status(format!("Added to queue: {}", track.display()));
 
                     if was_empty && !self.player.is_playing() {
-                        if let Err(e) = self.player.play(track.clone()) {
+                        if let Err(e) = self.player.play(&track) {
                             self.set_status(format!("Error playing: {}", e));
                         } else {
                             self.player.pause();
@@ -493,7 +493,7 @@ impl App {
                 if let Some(track) = self.queue.jump_to(self.queue_selected) {
                     let track_clone = track.clone();
                     let display_path = track_clone.display().to_string();
-                    if let Err(e) = self.player.play(track_clone.clone()) {
+                    if let Err(e) = self.player.play(&track_clone) {
                         self.set_status(format!("Error playing: {}", e));
                     } else {
                         self.set_status(format!("Playing: {}", display_path));
@@ -905,7 +905,7 @@ impl App {
             if let Some(track) = self.queue.current() {
                 let track_clone = track.clone();
                 let display_path = track_clone.display().to_string();
-                if let Err(e) = self.player.play(track_clone.clone()) {
+                if let Err(e) = self.player.play(&track_clone) {
                     self.set_status(format!("Error playing: {}", e));
                 } else {
                     self.set_status(format!("Repeating: {}", display_path));
@@ -916,7 +916,7 @@ impl App {
             // Normal next or random mode
             let track_clone = track.clone();
             let display_path = track_clone.display().to_string();
-            if let Err(e) = self.player.play(track_clone.clone()) {
+            if let Err(e) = self.player.play(&track_clone) {
                 self.set_status(format!("Error playing: {}", e));
             } else {
                 self.set_status(format!("Playing: {}", display_path));
@@ -931,7 +931,7 @@ impl App {
             if let Some(track) = self.queue.restart() {
                 let track_clone = track.clone();
                 let display_path = track_clone.display().to_string();
-                if let Err(e) = self.player.play(track_clone.clone()) {
+                if let Err(e) = self.player.play(&track_clone) {
                     self.set_status(format!("Error playing: {}", e));
                 } else {
                     self.set_status(format!("Restarting queue: {}", display_path));
@@ -952,7 +952,7 @@ impl App {
         if let Some(track) = self.queue.prev() {
             let track_clone = track.clone();
             let display_path = track_clone.display().to_string();
-            if let Err(e) = self.player.play(track_clone.clone()) {
+            if let Err(e) = self.player.play(&track_clone) {
                 self.set_status(format!("Error playing: {}", e));
             } else {
                 self.set_status(format!("Playing: {}", display_path));
