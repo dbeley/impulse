@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::fs;
 use std::path::PathBuf;
 
@@ -38,7 +39,7 @@ pub struct Queue {
     #[serde(default)]
     repeat_mode: RepeatMode,
     #[serde(skip)]
-    played_indices: Vec<usize>,
+    played_indices: HashSet<usize>,
 }
 
 impl Queue {
@@ -48,7 +49,7 @@ impl Queue {
             current_index: None,
             random_mode: false,
             repeat_mode: RepeatMode::Off,
-            played_indices: Vec::new(),
+            played_indices: HashSet::new(),
         }
     }
 
@@ -60,9 +61,7 @@ impl Queue {
     }
 
     pub fn add_multiple(&mut self, tracks: Vec<PathBuf>) {
-        for track in tracks {
-            self.tracks.push(track);
-        }
+        self.tracks.extend(tracks);
         if self.current_index.is_none() && !self.tracks.is_empty() {
             self.current_index = Some(0);
         }
@@ -106,9 +105,7 @@ impl Queue {
         if self.random_mode {
             // Mark current track as played
             if let Some(current) = self.current_index {
-                if !self.played_indices.contains(&current) {
-                    self.played_indices.push(current);
-                }
+                self.played_indices.insert(current);
             }
 
             // If all tracks have been played, reset
