@@ -10,8 +10,15 @@
     };
   };
 
-  outputs = { self, nixpkgs, flake-utils, rust-overlay }:
-    flake-utils.lib.eachDefaultSystem (system:
+  outputs =
+    {
+      self,
+      nixpkgs,
+      flake-utils,
+      rust-overlay,
+    }:
+    flake-utils.lib.eachDefaultSystem (
+      system:
       let
         overlays = [ (import rust-overlay) ];
         pkgs = import nixpkgs {
@@ -30,7 +37,10 @@
         ];
 
         rustToolchain = pkgs.rust-bin.stable.latest.default.override {
-          extensions = [ "rust-src" "rust-analyzer" ];
+          extensions = [
+            "rust-src"
+            "rust-analyzer"
+          ];
         };
 
         devInputs = with pkgs; [
@@ -49,7 +59,7 @@
           inherit nativeBuildInputs buildInputs;
 
           pname = "impulse";
-          version = (builtins.fromTOML (builtins.readFile ./Cargo.toml)).package.version;
+          version = (fromTOML (builtins.readFile ./Cargo.toml)).package.version;
           src = ./.;
           cargoLock = {
             lockFile = ./Cargo.lock;
@@ -90,8 +100,15 @@
           program = "${self.packages.${system}.default}/bin/impulse";
         };
       }
-    ) // {
-      nixosModules.default = { config, lib, pkgs, ... }:
+    )
+    // {
+      nixosModules.default =
+        {
+          config,
+          lib,
+          pkgs,
+          ...
+        }:
         with lib;
         let
           cfg = config.programs.impulse;
