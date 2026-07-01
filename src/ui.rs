@@ -130,7 +130,7 @@ impl App {
         // If queue was loaded from JSON and has tracks, load the current track but start paused
         if !queue.is_empty() {
             if let Some(track) = queue.current() {
-                let _ = player.play(&track);
+                let _ = player.play(track);
                 player.pause();
             }
         }
@@ -174,7 +174,7 @@ impl App {
         if !self.queue.is_empty() {
             self.current_tab = Tab::NowPlaying;
             if let Some(track) = self.queue.current() {
-                let _ = self.player.play(&track);
+                let _ = self.player.play(track);
                 self.player.pause();
                 self.track_play_time = Arc::new(Mutex::new(Some(SystemTime::now())));
                 // Update Last.fm now playing if enabled
