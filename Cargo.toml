@@ -52,7 +52,7 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg"]
 # Audio playback
 rodio = { version = "0.19", default-features = false, features = ["symphonia-all"] }
 symphonia = "0.5"
-symphonia-adapter-libopus = "0.2"
+symphonia-adapter-libopus = "=0.2.7"
 
 # Configuration
 serde = { version = "1.0", features = ["derive"] }
